@@ -9,7 +9,7 @@ import { Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { readGame, type SavedGame } from './games'
 import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
-import { listenForReviewForward } from './review-navigation'
+import { listenForReviewNavigation } from './review-navigation'
 
 const depth = 12
 
@@ -54,11 +54,12 @@ export function Analysis({ active, selected, onLibrary, settings, connection, on
     revealBoard()
   }
 
-  const forward = useEffectEvent(() => {
-    if (ply < moves.length) go(ply + 1)
+  const step = useEffectEvent((direction: -1 | 1) => {
+    const next = ply + direction
+    if (next >= 0 && next <= moves.length) go(next)
   })
   useEffect(() => {
-    if (active) return listenForReviewForward(window, forward)
+    if (active) return listenForReviewNavigation(window, step)
   }, [active])
 
   function stop() {
