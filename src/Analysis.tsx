@@ -5,7 +5,7 @@ import { Board, MoveTable } from './Board'
 import { reviewMove, summarize, type Review } from './coach'
 import { AskCoach, GeneratedCoachText, useCoachReply } from './CoachReplies'
 import { CoachSettingsPanel } from './CoachSettings'
-import { Stockfish, type Evaluation } from './engine'
+import { Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { readGame, type SavedGame } from './games'
 import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
@@ -27,6 +27,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   const [reviews, setReviews] = useState<Review[]>([])
   const [scores, setScores] = useState<Evaluation[]>([])
   const [running, setRunning] = useState(false)
+  const [phase, setPhase] = useState<EnginePhase>('loading')
   const [error, setError] = useState('')
   const engineRef = useRef<Stockfish>(undefined)
   useEffect(() => () => { engineRef.current?.close(); engineRef.current = undefined }, [])
@@ -44,9 +45,10 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
 
   async function analyze() {
     const board = new Chess(moves[0].before)
-    const engine = new Stockfish()
+    const engine = new Stockfish(setPhase)
     engineRef.current = engine
     setRunning(true)
+    setPhase('loading')
     setReviews([])
     setScores([])
     setError('')
@@ -106,7 +108,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
             : <button className="link-button" onClick={onLibrary}>Choose another game</button>}
         </div>
         {running ? <>
-          <div className="progress-label" role="status">Analyzing moves <span>{reviews.length}/{moves.length}</span></div>
+          <div className="progress-label" role="status">{phase === 'loading' ? 'Loading engine…' : 'Analyzing moves'} <span>{reviews.length}/{moves.length}</span></div>
           <progress max="100" value={percent} aria-label="Analysis progress" />
           <button className="button secondary full" onClick={stop}><CircleStop size={16} /> Stop analysis</button>
         </> : !summary && <button className="button primary full" onClick={() => void analyze()}><Sparkles size={16} /> {reviews.length ? 'Restart analysis' : 'Analyze game'}</button>}

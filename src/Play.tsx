@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Chess, type Color } from 'chess.js'
 import { Activity, Cpu, RotateCcw, Sparkles, Swords, Undo2 } from 'lucide-react'
 import { Board, gameLabel, MoveTable } from './Board'
-import { coordinateMove, Stockfish, type Evaluation } from './engine'
+import { coordinateMove, Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { savePgn, type SavedGame } from './games'
 import { loadTrainedStats, type TrainingStats } from './learned-assets'
 import { TrainedEngine } from './trained-engine'
@@ -21,6 +21,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const [skill, setSkill] = useState(4)
   const [evaluated, setEvaluated] = useState<{ fen: string; value: Evaluation }>()
   const [error, setError] = useState('')
+  const [phase, setPhase] = useState<EnginePhase>()
   const [retry, setRetry] = useState(0)
   const [canStart, setCanStart] = useState(false)
   const [engineType, setEngineType] = useState<'trained' | 'stockfish'>('trained')
@@ -37,7 +38,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
     if (!active || !canStart) return
     let stopped = false
     const toPlay = game.turn() !== human && !game.isGameOver()
-    const engine = engineType === 'trained' ? new TrainedEngine() : new Stockfish()
+    const engine = engineType === 'trained' ? new TrainedEngine() : new Stockfish(phase => { if (!stopped) setPhase(phase) })
     const request = engine instanceof TrainedEngine ? engine.analyze(game, skill, toPlay)
       : engine.analyze(game, toPlay ? 5 + skill : 10, toPlay ? (skill - 1) * 4 : 20)
     void request
@@ -51,7 +52,10 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         }
       }).catch((reason: Error) => {
         if (!stopped) setError(reason.message)
-      }).finally(() => engine.close())
+      }).finally(() => {
+        engine.close()
+        if (!stopped) setPhase(undefined)
+      })
     return () => { stopped = true; engine.close() }
   }, [active, canStart, engineType, game, human, retry, skill])
 
@@ -125,7 +129,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
       </section>
       <section className="panel section-pad">
         <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle">{moves.length} plies</span></div>
-        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : gameLabel(game, human, engineName)}</p>
+        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : engineType === 'stockfish' && phase === 'loading' && !game.isGameOver() ? 'Loading engine…' : gameLabel(game, human, engineName)}</p>
         {error && <div className="notice error">{error} <button className="link-button" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry</button></div>}
         <MoveTable moves={moves} />
         {moves.length > 0 && <button className="button secondary full" onClick={review}><Sparkles size={16} /> Review this game</button>}
