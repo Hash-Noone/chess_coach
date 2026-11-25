@@ -21,6 +21,13 @@ describe('game import', () => {
     expect(readGame(imported.pgn).history()).toEqual(['a4'])
   })
 
+  it('names the bad token, move number and side without PGN parser jargon', () => {
+    expect(() => readGame('1. e4 e5 2. Qz9 *')).toThrow('Move 2 for White, “Qz9”, isn’t a legal move.')
+    expect(() => readGame('1. e4 Qz9 *')).toThrow('Move 1 for Black, “Qz9”, isn’t a legal move.')
+    expect(() => readGame('1. e4 e5 2. Qa4 *')).toThrow('Move 2 for White, “Qa4”, isn’t a legal move.')
+    expect(() => readGame('[Event "Missing quote]')).toThrow('Check the PGN headers and move list')
+  })
+
   it('imports the official anonymous NDJSON export', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(game) + '\n'))
     vi.stubGlobal('fetch', fetch)

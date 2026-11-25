@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Chess, type Color } from 'chess.js'
-import { Activity, Cpu, RotateCcw, Sparkles, Swords, Undo2 } from 'lucide-react'
+import { Chess, DEFAULT_POSITION, type Color } from 'chess.js'
+import { Activity, Cpu, Flag, RotateCcw, Sparkles, Swords, Undo2 } from 'lucide-react'
 import { Board, gameLabel, MoveTable } from './Board'
 import { coordinateMove, Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { savePgn, type SavedGame } from './games'
@@ -20,6 +20,12 @@ export function stockfishPlayDepth(level: number) {
   return level === 6 ? 18 : 5 + level
 }
 
+export function matchResult(game: Chess, human: Color, resigned: boolean) {
+  if (resigned) return human === 'w' ? '0-1' : '1-0'
+  if (game.isCheckmate()) return game.turn() === 'w' ? '0-1' : '1-0'
+  return game.isDraw() ? '1/2-1/2' : '*'
+}
+
 export function Play({ active, onReview }: { active: boolean; onReview: (game: SavedGame) => void }) {
   const [game, setGame] = useState(() => new Chess())
   const [human, setHuman] = useState<Color>('w')
@@ -30,11 +36,16 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const [phase, setPhase] = useState<EnginePhase>()
   const [retry, setRetry] = useState(0)
   const [canStart, setCanStart] = useState(false)
+  const [resigned, setResigned] = useState(false)
   const [engineType, setEngineType] = useState<'trained' | 'stockfish'>('trained')
   const [training, setTraining] = useState<TrainingStats>()
   const [positionInput, setPositionInput] = useState('')
   const [positionError, setPositionError] = useState('')
   const engineName = engineType === 'trained' ? 'Lichess-trained engine' : 'Stockfish'
+  const moves = game.history({ verbose: true })
+  const finished = resigned || game.isGameOver()
+  const inProgress = !finished && (moves.length > 0 || game.fen() !== DEFAULT_POSITION)
+  const result = matchResult(game, human, resigned)
 
   useEffect(() => {
     let mounted = true
@@ -43,7 +54,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   }, [])
 
   useEffect(() => {
-    if (!active || !canStart) return
+    if (!active || !canStart || resigned) return
     let stopped = false
     const toPlay = game.turn() !== human && !game.isGameOver()
     const engine = engineType === 'trained' ? new TrainedEngine() : new Stockfish(phase => { if (!stopped) setPhase(phase) })
@@ -65,30 +76,33 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         if (!stopped) setPhase(undefined)
       })
     return () => { stopped = true; engine.close() }
-  }, [active, canStart, engineType, game, human, retry, skill])
+  }, [active, canStart, engineType, game, human, resigned, retry, skill])
 
   function start(color = human, position = new Chess()) {
+    if (inProgress && !window.confirm('Replace this game in progress? Its moves will be lost.')) return false
     setHuman(color)
     setOrientation(color)
     setGame(position)
     setEvaluated(undefined)
     setError('')
+    setPhase(undefined)
+    setResigned(false)
     setPositionError('')
     setCanStart(!position.isGameOver())
+    return true
   }
 
   function loadPosition(event: FormEvent) {
     event.preventDefault()
     try {
-      start(human, readPlayPosition(positionInput))
-      setPositionInput('')
+      if (start(human, readPlayPosition(positionInput))) setPositionInput('')
     } catch (reason) {
       setPositionError((reason as Error).message)
     }
   }
 
   function play(from: string, to: string, promotion?: string) {
-    if (game.turn() !== human || game.isGameOver()) return false
+    if (game.turn() !== human || finished) return false
     try {
       const next = copyGame(game)
       next.move({ from, to, promotion })
@@ -99,10 +113,9 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
     } catch { return false }
   }
 
-  const moves = game.history({ verbose: true })
   const lastMove = moves.at(-1)
   const isHumanTurn = game.turn() === human
-  const canPlay = isHumanTurn && !game.isGameOver()
+  const canPlay = isHumanTurn && !finished
   const engineOpeningMoves = moves.length && moves[0].color !== human ? 1 : 0
   const levelNames = ['Relaxed', 'Casual', 'Club', 'Strong', 'Expert', 'Maximum']
   const value = evaluated?.fen === game.fen() ? evaluated.value : undefined
@@ -111,14 +124,15 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
     const copy = copyGame(game)
     copy.setHeader('White', human === 'w' ? 'You' : engineName)
     copy.setHeader('Black', human === 'b' ? 'You' : engineName)
-    copy.setHeader('Result', game.isCheckmate() ? (game.turn() === 'w' ? '0-1' : '1-0') : game.isDraw() ? '1/2-1/2' : '*')
+    copy.setHeader('Result', result)
+    if (resigned) copy.setHeader('Termination', 'resignation')
     onReview(savePgn(copy.pgn(), 'engine'))
   }
 
   return <div className="workspace">
     <div className="play-board-stack">
       <Board id="play-board" fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
-        showTurn={!game.isGameOver()} evaluation={value} highlight={lastMove}
+        showTurn={!finished} evaluation={value} highlight={lastMove}
         canPlay={canPlay} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
       {active && <Opening fen={game.fen()} onMove={canPlay ? uci => {
         const { from, to, promotion } = coordinateMove(uci)
@@ -146,12 +160,18 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         </div>
         <label htmlFor="strength" className="field-label strength-label">Engine strength <span>{levelNames[skill - 1]} · {skill}/6</span></label>
         <input id="strength" type="range" min="1" max="6" value={skill} onChange={event => setSkill(Number(event.target.value))} />
-        <div className="button-row">
+        <div className="button-row match-actions">
           <button className="button primary" onClick={() => start()}><RotateCcw size={15} /> New game</button>
-          <button className="button secondary" disabled={moves.length <= engineOpeningMoves} onClick={() => {
+          <button className="button secondary" disabled={resigned || moves.length <= engineOpeningMoves} onClick={() => {
             const keep = Math.max(engineOpeningMoves, moves.length - (isHumanTurn ? 2 : 1))
             setGame(copyGame(game, keep)); setEvaluated(undefined); setError('')
           }}><Undo2 size={17} /> Undo</button>
+          <button className="button secondary" disabled={finished || !moves.length} onClick={() => {
+            if (window.confirm('Resign this game? The engine will win, and you can still review the moves.')) {
+              setResigned(true)
+              setError('')
+            }
+          }}><Flag size={15} /> Resign</button>
         </div>
         <details className="load-position">
           <summary>Load position (FEN)</summary>
@@ -166,7 +186,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
       </section>
       <section className="panel section-pad">
         <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle" title="Each player’s turn counts as one move.">{moves.length} moves</span></div>
-        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : engineType === 'stockfish' && phase === 'loading' && !game.isGameOver() ? 'Loading engine…' : gameLabel(game, human, engineName)}</p>
+        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !finished && !error ? 'pulse' : ''}`} />{resigned ? `${engineName} wins by resignation (${result})` : error && !isHumanTurn ? 'Engine stopped' : engineType === 'stockfish' && phase === 'loading' && !finished ? 'Loading engine…' : gameLabel(game, human, engineName)}</p>
         {error && <div className="notice error">{error} <button className="link-button" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry</button></div>}
         <MoveTable moves={moves} />
         {moves.length > 0 && <button className="button secondary full" onClick={review}><Sparkles size={16} /> Review this game</button>}

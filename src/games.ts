@@ -14,9 +14,39 @@ export type SavedGame = {
 
 const storageKey = 'chess-coach-games-v1'
 
+function illegalPgnMove(game: Chess, move: string) {
+  return new Error(`Move ${game.moveNumber()} for ${game.turn() === 'w' ? 'White' : 'Black'}, “${move}”, isn’t a legal move.`)
+}
+
+function loadPgn(game: Chess, pgn: string) {
+  try {
+    game.loadPgn(pgn)
+  } catch (error) {
+    const reason = error as Error & { location?: { start: { offset: number } } }
+    const illegal = /^Invalid move in PGN: (.+)$/.exec(reason.message)
+    if (illegal) throw illegalPgnMove(game, illegal[1])
+    const offset = reason.location?.start.offset
+    if (offset !== undefined) {
+      const before = pgn.slice(0, offset)
+      const left = /[\w=+#-]*$/.exec(before)?.[0] ?? ''
+      const right = /^[\w=+#-]+/.exec(pgn.slice(offset))?.[0]
+      if (right) {
+        const prefix = new Chess()
+        try {
+          prefix.loadPgn(before.slice(0, before.length - left.length).replace(/\d+\.{1,3}\s*$/, ''))
+        } catch {
+          throw new Error('Check the PGN headers and move list, then try again.')
+        }
+        throw illegalPgnMove(prefix, left + right)
+      }
+    }
+    throw new Error('Check the PGN headers and move list, then try again.')
+  }
+}
+
 export function readGame(pgn: string) {
   const game = new Chess()
-  game.loadPgn(pgn.trim())
+  loadPgn(game, pgn.trim())
   if (!game.history().length) throw new Error('This PGN does not contain any moves.')
   const variant = game.getHeaders().Variant
   if (variant && !/^(standard|from position)$/i.test(variant)) throw new Error('Only standard chess games are supported.')
