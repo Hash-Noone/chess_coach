@@ -61,7 +61,7 @@ export function App() {
       {storageError && <p className="notice error" role="alert">This browser could not save games to local storage. Games will be kept until you close the page.</p>}
       <div hidden={mode !== 'play'}><Play active={mode === 'play'} onReview={game => { persist([game]); open(game) }} /></div>
       <div hidden={mode !== 'library'}><Library saved={saved} onSave={persist} onOpen={open} /></div>
-      {(coachOpened || mode === 'coach') && <div hidden={mode !== 'coach'}><Analysis key={selected.id} selected={selected} onLibrary={() => setMode('library')}
+      {(coachOpened || mode === 'coach') && <div hidden={mode !== 'coach'}><Analysis key={selected.id} active={mode === 'coach'} selected={selected} onLibrary={() => setMode('library')}
         state={reviews[selected.id] ?? initialReview} update={apply => setReviews(old => ({
           ...old, [selected.id]: apply(old[selected.id] ?? initialReview),
         }))} level={coachLevel} onLevel={setCoachLevel}

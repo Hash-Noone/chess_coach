@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Chess, type Color, type Move } from 'chess.js'
 import { ChevronLeft, ChevronRight, CircleStop, ExternalLink, Lightbulb, ListOrdered, SkipBack, SkipForward, Sparkles, Target } from 'lucide-react'
 import { Board, MoveTable } from './Board'
@@ -9,13 +9,15 @@ import { Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { readGame, type SavedGame } from './games'
 import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
+import { listenForReviewForward } from './review-navigation'
 
 const depth = 12
 
 export type ReviewState = { selection: { ply: number }; showBest: boolean; reviews: Review[]; scores: Evaluation[] }
 export const initialReview: ReviewState = { selection: { ply: 0 }, showBest: false, reviews: [], scores: [] }
 
-export function Analysis({ selected, onLibrary, settings, connection, onConnect, onDisconnect, state, update, level, onLevel }: {
+export function Analysis({ active, selected, onLibrary, settings, connection, onConnect, onDisconnect, state, update, level, onLevel }: {
+  active: boolean
   selected: SavedGame
   onLibrary: () => void
   settings: CoachSettings
@@ -51,6 +53,13 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
     update(state => ({ ...state, selection: { ply: Math.min(moves.length, Math.max(0, next)) }, showBest: false }))
     revealBoard()
   }
+
+  const forward = useEffectEvent(() => {
+    if (ply < moves.length) go(ply + 1)
+  })
+  useEffect(() => {
+    if (active) return listenForReviewForward(window, forward)
+  }, [active])
 
   function stop() {
     engineRef.current?.close()

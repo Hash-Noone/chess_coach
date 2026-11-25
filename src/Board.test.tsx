@@ -9,7 +9,7 @@ it('renders distinct Play and Review boards, with Review pieces at the selected 
   const noop = () => {}
   const html = renderToStaticMarkup(<>
     <div hidden><Play active={false} onReview={noop} /></div>
-    <Analysis selected={library.find(game => game.id === 'fools-mate')!} onLibrary={noop}
+    <Analysis active selected={library.find(game => game.id === 'fools-mate')!} onLibrary={noop}
       state={{ ...initialReview, selection: { ply: 3 } }} update={noop}
       level="beginner" onLevel={noop} settings={loadCoachSettings()} onConnect={noop} onDisconnect={noop} />
   </>)

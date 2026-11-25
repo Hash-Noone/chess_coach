@@ -16,6 +16,10 @@ function copyGame(game: Chess, keep = game.history().length) {
   return copy
 }
 
+export function stockfishPlayDepth(level: number) {
+  return level === 6 ? 18 : 5 + level
+}
+
 export function Play({ active, onReview }: { active: boolean; onReview: (game: SavedGame) => void }) {
   const [game, setGame] = useState(() => new Chess())
   const [human, setHuman] = useState<Color>('w')
@@ -44,7 +48,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
     const toPlay = game.turn() !== human && !game.isGameOver()
     const engine = engineType === 'trained' ? new TrainedEngine() : new Stockfish(phase => { if (!stopped) setPhase(phase) })
     const request = engine instanceof TrainedEngine ? engine.analyze(game, skill, toPlay)
-      : engine.analyze(game, toPlay ? 5 + skill : 10, toPlay ? (skill - 1) * 4 : 20)
+      : engine.analyze(game, toPlay ? stockfishPlayDepth(skill) : 10, toPlay ? (skill - 1) * 4 : 20)
     void request
       .then(result => {
         if (stopped) return

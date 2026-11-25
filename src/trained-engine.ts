@@ -2,8 +2,8 @@ import type { Chess } from 'chess.js'
 import type { Evaluation } from './engine'
 import type { SearchRequest } from './learned.worker'
 
-const depth = [1, 2, 3, 4, 5, 6]
-const time = [140, 250, 450, 750, 1250, 2200]
+const depth = [1, 2, 3, 4, 5, 8]
+const time = [140, 250, 450, 750, 1250, 4000]
 
 export class TrainedEngine {
   private worker = new Worker(new URL('./learned.worker.ts', import.meta.url), { type: 'module' })
