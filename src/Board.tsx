@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Chess, type Color, type Move, type Square } from 'chess.js'
 import { Chessboard, type ChessboardOptions } from 'react-chessboard'
 import { ArrowUpDown, Crown } from 'lucide-react'
@@ -106,12 +106,26 @@ export function gameLabel(game: Chess, human: Color, engineName: string) {
   return game.turn() === human ? (game.isCheck() ? 'Your king is in check' : 'Your turn to move') : `${engineName} is thinking…`
 }
 
-export function MoveTable({ moves, position, onSelect, ratings }: {
+export function MoveTable({ moves, selection, onSelect, ratings }: {
   moves: Move[]
-  position?: number
+  selection?: { ply: number }
   onSelect?: (ply: number) => void
   ratings?: string[]
 }) {
+  const list = useRef<HTMLDivElement>(null)
+  const active = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const item = active.current
+    const container = list.current
+    if (item && container) {
+      const itemBounds = item.getBoundingClientRect()
+      const listBounds = container.getBoundingClientRect()
+      if (itemBounds.top < listBounds.top || itemBounds.bottom > listBounds.bottom) {
+        const options = { block: 'nearest', container: 'nearest' } as const
+        item.scrollIntoView(options)
+      }
+    }
+  }, [selection])
   if (!moves.length) return <p className="empty-moves">The moves will appear here as the game progresses.</p>
   const rows: { number: number; w?: number; b?: number }[] = []
   moves.forEach((move, index) => {
@@ -122,9 +136,10 @@ export function MoveTable({ moves, position, onSelect, ratings }: {
   const cell = (index?: number) => {
     if (index === undefined) return <span />
     const content = <>{moves[index].san}{ratings?.[index] && <i className={`rating-dot ${ratings[index].toLowerCase()}`} />}</>
-    return onSelect ? <button className={`move ${position === index + 1 ? 'current' : ''}`} onClick={() => onSelect(index + 1)}>{content}</button>
+    const selected = selection?.ply === index + 1
+    return onSelect ? <button ref={selected ? active : undefined} className={`move ${selected ? 'current' : ''}`} aria-current={selected ? 'step' : undefined} onClick={() => onSelect(index + 1)}>{content}</button>
       : <span className="move">{content}</span>
   }
-  return <div className="move-table">{rows.map(row =>
+  return <div className="move-table" ref={list}>{rows.map(row =>
     <div className="move-row" key={row.number}><small>{row.number}.</small>{cell(row.w)}{cell(row.b)}</div>)}</div>
 }

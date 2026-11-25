@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronRight, Crown, Database, Github, Sparkles, Swords } from 'lucide-react'
-import { Analysis } from './Analysis'
+import { Analysis, initialReview, type ReviewState } from './Analysis'
+import type { CoachLevel } from './coach'
 import { library, loadSavedGames, storeGames, type SavedGame } from './games'
 import { Library } from './Library'
 import { loadCoachSettings, storeCoachSettings, type CoachConnection } from './llm'
@@ -20,7 +21,15 @@ export function App() {
   const [storageError, setStorageError] = useState(false)
   const [coachSettings, setCoachSettings] = useState(loadCoachSettings)
   const [connection, setConnection] = useState<CoachConnection>()
+  const [coachLevel, setCoachLevel] = useState<CoachLevel>('beginner')
+  const [coachOpened, setCoachOpened] = useState(false)
+  const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
   const page = modes.find(item => item.id === mode)!
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+    if (mode === 'coach') setCoachOpened(true)
+  }, [mode, selected.id])
 
   function persist(games: SavedGame[]) {
     setSaved(old => {
@@ -52,14 +61,17 @@ export function App() {
       {storageError && <p className="notice error" role="alert">This browser could not save games to local storage. Games will be kept until you close the page.</p>}
       <div hidden={mode !== 'play'}><Play active={mode === 'play'} onReview={game => { persist([game]); open(game) }} /></div>
       <div hidden={mode !== 'library'}><Library saved={saved} onSave={persist} onOpen={open} /></div>
-      {mode === 'coach' && <Analysis key={selected.id} selected={selected} onLibrary={() => setMode('library')}
+      {(coachOpened || mode === 'coach') && <div hidden={mode !== 'coach'}><Analysis key={selected.id} selected={selected} onLibrary={() => setMode('library')}
+        state={reviews[selected.id] ?? initialReview} update={apply => setReviews(old => ({
+          ...old, [selected.id]: apply(old[selected.id] ?? initialReview),
+        }))} level={coachLevel} onLevel={setCoachLevel}
         settings={coachSettings} connection={connection} onConnect={next => {
           const { provider, baseUrl, model } = next
           const settings = { provider, baseUrl, model }
           try { storeCoachSettings(settings) } catch { /* The connection still works for this tab. */ }
           setCoachSettings(settings)
           setConnection(next)
-        }} onDisconnect={() => setConnection(undefined)} />}
+        }} onDisconnect={() => setConnection(undefined)} /></div>}
       <footer><span>ChessCoach <span className="footer-divider">·</span> Stockfish analysis and Lichess game data</span><a href="https://github.com/Hash-Noone/chess-coach" target="_blank" rel="noreferrer"><Github size={15} /> Source</a></footer>
     </main>
   </>

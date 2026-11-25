@@ -190,3 +190,7 @@ footer a:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+@media (max-width: 665px), (pointer: coarse) {
+  .icon-button, nav button { min-width: 44px; min-height: 44px; }
+  button.move, .button, .segmented button, .key-moments button { min-height: 44px; }
+}

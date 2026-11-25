@@ -1,6 +1,8 @@
 import { Chess } from 'chess.js'
 import { describe, expect, it } from 'vitest'
-import { classify, reviewMove, summarize, winChance } from './coach'
+import { beginnerExplanation, classify, reviewImpact, reviewMove, summarize, winChance } from './coach'
+import { moveFacts, movePrompt } from './llm'
+import { tacticsOf } from './tactics'
 
 describe('move classification', () => {
   it('uses win chance drops rather than raw centipawn thresholds', () => {
@@ -46,5 +48,67 @@ describe('coach explanations', () => {
     const move = board.move('Qd4')
     const result = reviewMove(move, { cp: 500, bestMove: 'c4a4', pv: [] }, { cp: -300, bestMove: 'f5d4', pv: [] })
     expect(result.explanation).toContain('Nxd4, which takes your queen on d4 without an immediate recapture')
+  })
+
+  it('explains the king diagonal and knight square opened up by f3', () => {
+    const move = new Chess().move('f3')
+    const before = { cp: 30, bestMove: 'e2e4', pv: [] }
+    const after = { cp: -61, bestMove: 'e7e5', pv: [] }
+    const review = reviewMove(move, before, after)
+    const text = beginnerExplanation(move, before, after, review)
+    expect(text).toContain('f3 = pawn to f3')
+    expect(text).toContain('opens the e1–h4 diagonal')
+    expect(text).toContain('takes f3 away from your knight on g1')
+    expect(reviewImpact(move, review, before, after, 'beginner')).toBe('Lost about 0.9 pawns of advantage')
+  })
+
+  it('translates the Fool’s Mate notation, names the blocked exits, and verifies the alternative defense', () => {
+    const board = new Chess()
+    for (const san of ['f3', 'e5']) board.move(san)
+    const move = board.move('g4')
+    const before = { cp: -61, bestMove: 'e2e4', pv: ['e2e4'] }
+    const after = { cp: -10000, mate: -1, bestMove: 'd8h4', pv: ['d8h4'] }
+    const review = reviewMove(move, before, after)
+    const text = beginnerExplanation(move, before, after, review)
+    for (const phrase of ['Qh4# = queen to h4, checkmate', 'd1 (its own queen)', 'd2 (its own pawn)', 'e2 (its own pawn)', 'f1 (its own bishop)', 'f2 is under attack', 'Try e4 instead', 'block the check with your pawn from g2 to g3']) {
+      expect(text).toContain(phrase)
+    }
+    expect(reviewImpact(move, review, before, after, 'beginner')).toBe('Allowed checkmate')
+  })
+})
+
+describe('tactics from played and recommended moves', () => {
+  it('explains the queen and rook fork on 8...Nxe3 in Lichess Xdv6URa9', () => {
+    const move = new Chess('r1bqk2r/ppp2ppp/2np4/4p3/2B1P1n1/2NPPN2/PPP3PP/R2Q1RK1 b kq - 4 8').move('Nxe3')
+    const before = { cp: -190, bestMove: 'g4e3', pv: ['g4e3'] }
+    const after = { cp: -185, pv: [] }
+    const result = reviewMove(move, before, after)
+    expect(result.explanation).toContain('forks the queen on d1 and the rook on f1')
+    expect(moveFacts(move, result, before, after).playedTactics[0]).toMatchObject({ kind: 'fork' })
+  })
+
+  it('explains the attack and verified follow-up for 14.Bg5 in Lichess a9hXsw20', () => {
+    const move = new Chess('r1b2rk1/1pp1qp1p/p1nb2p1/4p3/2BPN2P/2PQB3/PP3PP1/R3K2R w KQ - 0 14').move('h5')
+    const before = { cp: 390, bestMove: 'e3g5', pv: ['e3g5', 'e5d4', 'g5e7'] }
+    const after = { cp: -100, pv: [] }
+    const result = reviewMove(move, before, after)
+    expect(result.explanation).toContain('Prefer Bg5. The white bishop on g5 attacks the black queen on e7.')
+    expect(result.explanation).toContain('White takes the queen on e7 with the bishop (Bxe7)')
+    const facts = moveFacts(move, result, before, after)
+    expect(facts.bestFollowup?.san).toEqual(['Bg5', 'exd4', 'Bxe7'])
+    expect(facts.bestTactics[0]).toMatchObject({ kind: 'queen attack' })
+    const prompt = movePrompt(facts, 'beginner')
+    expect(prompt.system).toContain('translate algebraic notation')
+    expect(prompt.user).toContain('"bestTactics"')
+    expect(movePrompt(facts, 'advanced').system).toContain('standard tactical and evaluation terms')
+  })
+
+  it('detects a pin, a skewer, and a discovered attack based on the pieces on the actual board', () => {
+    const pin = new Chess('4k3/8/2n5/8/2B5/8/8/4K3 w - - 0 1').move('Bb5')
+    const skewer = new Chess('r3k3/q7/8/8/8/8/7R/4K3 w - - 0 1').move('Ra2')
+    const discovery = new Chess('6k1/4q3/8/8/8/8/4B3/3KR3 w - - 0 1').move('Bd3')
+    expect(tacticsOf(pin)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'pin' })]))
+    expect(tacticsOf(skewer)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'skewer' })]))
+    expect(tacticsOf(discovery)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'discovered attack' })]))
   })
 })

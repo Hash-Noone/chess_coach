@@ -128,7 +128,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         </div>
       </section>
       <section className="panel section-pad">
-        <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle">{moves.length} plies</span></div>
+        <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle" title="Each player’s turn counts as one move.">{moves.length} moves</span></div>
         <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : engineType === 'stockfish' && phase === 'loading' && !game.isGameOver() ? 'Loading engine…' : gameLabel(game, human, engineName)}</p>
         {error && <div className="notice error">{error} <button className="link-button" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry</button></div>}
         <MoveTable moves={moves} />
