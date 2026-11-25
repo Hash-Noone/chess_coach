@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Chess, type Color } from 'chess.js'
+import { Chess, type Color, type Move } from 'chess.js'
 import { ChevronLeft, ChevronRight, CircleStop, ExternalLink, Lightbulb, ListOrdered, SkipBack, SkipForward, Sparkles, Target } from 'lucide-react'
 import { Board, MoveTable } from './Board'
-import { beginnerExplanation, reviewImpact, reviewMove, summarize, type CoachLevel, type Review } from './coach'
+import { beginnerExplanation, boardMove, reviewImpact, reviewMove, summarize, type CoachLevel, type Review } from './coach'
 import { AskCoach, GeneratedCoachText, useCoachReply } from './CoachReplies'
 import { CoachSettingsPanel } from './CoachSettings'
 import { Stockfish, type EnginePhase, type Evaluation } from './engine'
@@ -34,6 +34,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   const [running, setRunning] = useState(false)
   const [phase, setPhase] = useState<EnginePhase>('loading')
   const [error, setError] = useState('')
+  const [variation, setVariation] = useState<Move[]>([])
   const engineRef = useRef<Stockfish>(undefined)
   const boardRef = useRef<HTMLDivElement>(null)
   useEffect(() => () => { engineRef.current?.close(); engineRef.current = undefined }, [])
@@ -46,6 +47,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   }
 
   function go(next: number) {
+    setVariation([])
     update(state => ({ ...state, selection: { ply: Math.min(moves.length, Math.max(0, next)) }, showBest: false }))
     revealBoard()
   }
@@ -57,6 +59,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   }
 
   async function analyze() {
+    setVariation([])
     const board = new Chess(moves[0].before)
     const engine = new Stockfish(setPhase)
     engineRef.current = engine
@@ -88,7 +91,9 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   const review = reviews[ply - 1]
   const impact = review && reviewImpact(current, review, scores[ply - 1], scores[ply], level)
   const bestView = showBest && current && review?.bestMove
-  const fen = bestView ? current.before : current?.after ?? moves[0].before
+  const variationMove = variation.at(-1)
+  const fen = variationMove?.after ?? (bestView ? current.before : current?.after ?? moves[0].before)
+  const evaluation = variationMove ? undefined : scores[bestView ? ply - 1 : ply]
   const summary = reviews.length === moves.length ? summarize(moves, reviews) : undefined
   const percent = Math.floor(reviews.length / moves.length * 100)
   const facts = review && scores[ply - 1] && scores[ply] ? moveFacts(current, review, scores[ply - 1], scores[ply], level) : undefined
@@ -100,7 +105,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
   return <div className="workspace">
     <div>
       <div ref={boardRef}><Board id="review-board" fen={fen} orientation={orientation} bottomName={orientation === 'w' ? selected.white : selected.black} topName={orientation === 'w' ? selected.black : selected.white}
-        evaluation={scores[bestView ? ply - 1 : ply]} highlight={bestView ? undefined : current} arrow={bestView || undefined}
+        evaluation={evaluation} highlight={variationMove ?? (bestView ? undefined : current)} arrow={variationMove ? undefined : bestView || undefined}
         onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} /></div>
       <div className="board-navigation">
         <button className="icon-button" title="First position" aria-label="First position" disabled={ply === 0} onClick={() => go(0)}><SkipBack size={17} /></button>
@@ -109,7 +114,16 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
         <button className="icon-button" title="Next move" aria-label="Next move" disabled={ply === moves.length} onClick={() => go(ply + 1)}><ChevronRight size={20} /></button>
         <button className="icon-button" title="Final position" aria-label="Final position" disabled={ply === moves.length} onClick={() => go(moves.length)}><SkipForward size={17} /></button>
       </div>
-      <Opening fen={fen} gameOpening={selected.opening} />
+      {variationMove && <div className="opening-variation">
+        <p><strong>Opening variation:</strong> {variation.map(move => move.san).join(' ')}</p>
+        <button className="button secondary" onClick={() => { setVariation([]); revealBoard() }}>Return to game position</button>
+      </div>}
+      <Opening fen={fen} onMove={uci => {
+        const move = boardMove(fen, uci)
+        if (!move) return
+        setVariation(steps => [...steps, move])
+        revealBoard()
+      }} />
     </div>
     <aside className="side-stack">
       <section className="panel section-pad">
@@ -157,13 +171,14 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
             <small className="muted">Rule-based{impact && ` · ${impact}`}</small>
             <GeneratedCoachText reply={generatedMove} title="LLM move explanation" />
             {review.bestMove && <button className="button secondary full" onClick={() => {
+              setVariation([])
               update(state => ({ ...state, showBest: !state.showBest }))
               revealBoard()
             }}><Target size={16} /> {showBest ? 'Return to played move' : `Show best move: ${review.bestSan}`}</button>}
           </> : <p className="muted">{ply === 0 ? 'Select a move to see the coach’s explanation.' : 'Run analysis to get feedback on this move.'}</p>}
         </div>
       </section>
-      <AskCoach key={fen + level} connection={connection} fen={fen} evaluation={scores[bestView ? ply - 1 : ply]} move={facts} level={level} />
+      <AskCoach key={fen + level} connection={connection} fen={fen} evaluation={evaluation} move={variationMove ? undefined : facts} level={level} />
     </aside>
   </div>
 }

@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Chess, type Color } from 'chess.js'
 import { Activity, Cpu, RotateCcw, Sparkles, Swords, Undo2 } from 'lucide-react'
 import { Board, gameLabel, MoveTable } from './Board'
 import { coordinateMove, Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { savePgn, type SavedGame } from './games'
 import { loadTrainedStats, type TrainingStats } from './learned-assets'
+import { Opening } from './Opening'
+import { readPlayPosition } from './play-position'
 import { TrainedEngine } from './trained-engine'
 
 function copyGame(game: Chess, keep = game.history().length) {
@@ -26,6 +28,8 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const [canStart, setCanStart] = useState(false)
   const [engineType, setEngineType] = useState<'trained' | 'stockfish'>('trained')
   const [training, setTraining] = useState<TrainingStats>()
+  const [positionInput, setPositionInput] = useState('')
+  const [positionError, setPositionError] = useState('')
   const engineName = engineType === 'trained' ? 'Lichess-trained engine' : 'Stockfish'
 
   useEffect(() => {
@@ -59,13 +63,24 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
     return () => { stopped = true; engine.close() }
   }, [active, canStart, engineType, game, human, retry, skill])
 
-  function start(color = human) {
+  function start(color = human, position = new Chess()) {
     setHuman(color)
     setOrientation(color)
-    setGame(new Chess())
+    setGame(position)
     setEvaluated(undefined)
     setError('')
-    setCanStart(true)
+    setPositionError('')
+    setCanStart(!position.isGameOver())
+  }
+
+  function loadPosition(event: FormEvent) {
+    event.preventDefault()
+    try {
+      start(human, readPlayPosition(positionInput))
+      setPositionInput('')
+    } catch (reason) {
+      setPositionError((reason as Error).message)
+    }
   }
 
   function play(from: string, to: string, promotion?: string) {
@@ -83,6 +98,8 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const moves = game.history({ verbose: true })
   const lastMove = moves.at(-1)
   const isHumanTurn = game.turn() === human
+  const canPlay = isHumanTurn && !game.isGameOver()
+  const engineOpeningMoves = moves.length && moves[0].color !== human ? 1 : 0
   const levelNames = ['Relaxed', 'Casual', 'Club', 'Strong', 'Expert', 'Maximum']
   const value = evaluated?.fen === game.fen() ? evaluated.value : undefined
 
@@ -95,9 +112,15 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   }
 
   return <div className="workspace">
-    <Board id="play-board" fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
-      showTurn={!game.isGameOver()} evaluation={value} highlight={lastMove}
-      canPlay={isHumanTurn && !game.isGameOver()} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
+    <div className="play-board-stack">
+      <Board id="play-board" fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
+        showTurn={!game.isGameOver()} evaluation={value} highlight={lastMove}
+        canPlay={canPlay} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
+      {active && <Opening fen={game.fen()} onMove={canPlay ? uci => {
+        const { from, to, promotion } = coordinateMove(uci)
+        play(from, to, promotion)
+      } : undefined} />}
+    </div>
     <aside className="side-stack">
       <section className="panel section-pad">
         <div className="eyebrow"><Swords size={15} /> ENGINE MATCH</div>
@@ -121,11 +144,21 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         <input id="strength" type="range" min="1" max="6" value={skill} onChange={event => setSkill(Number(event.target.value))} />
         <div className="button-row">
           <button className="button primary" onClick={() => start()}><RotateCcw size={15} /> New game</button>
-          <button className="button secondary" disabled={moves.length <= (human === 'b' ? 1 : 0)} onClick={() => {
-            const keep = Math.max(human === 'b' ? 1 : 0, moves.length - (isHumanTurn ? 2 : 1))
+          <button className="button secondary" disabled={moves.length <= engineOpeningMoves} onClick={() => {
+            const keep = Math.max(engineOpeningMoves, moves.length - (isHumanTurn ? 2 : 1))
             setGame(copyGame(game, keep)); setEvaluated(undefined); setError('')
           }}><Undo2 size={17} /> Undo</button>
         </div>
+        <details className="load-position">
+          <summary>Load position (FEN)</summary>
+          <form onSubmit={loadPosition}>
+            <label className="field-label" htmlFor="play-fen">FEN</label>
+            <input id="play-fen" value={positionInput} onChange={event => { setPositionInput(event.target.value); setPositionError('') }}
+              aria-invalid={!!positionError} required spellCheck={false} />
+            {positionError && <p className="notice error" role="alert">{positionError}</p>}
+            <button className="button secondary" type="submit">Load position</button>
+          </form>
+        </details>
       </section>
       <section className="panel section-pad">
         <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle" title="Each player’s turn counts as one move.">{moves.length} moves</span></div>

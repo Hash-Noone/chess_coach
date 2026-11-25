@@ -15,10 +15,10 @@ Open the URL printed by Vite. Run `npm test` for the coach and import tests, or 
 
 ## What's inside
 
-- **Play:** Choose the default Lichess-trained engine or Stockfish, White or Black, and one of six strength levels. The trained engine uses an opening book from rated games and a compact neural evaluation trained on Lichess data. Both engines run in browser workers. See [Training](training/README.md) for data, metrics, and reproduction steps.
+- **Play:** Choose the default Lichess-trained engine or Stockfish, White or Black, and one of six strength levels. Use **Load position (FEN)** to start from a custom position. The trained engine uses an opening book from rated games and a compact neural evaluation trained on Lichess data. Both engines run in browser workers. See [Training](training/README.md) for data, metrics, and reproduction steps.
 - **Game library:** Load up to 20 recent public standard games for a Lichess username, paste a PGN, or open a practice game. Imported games are saved in this browser's local storage. If Lichess doesn't provide the bulk export, the app tries its latest-game endpoint and labels the result.
 - **AI coach:** Stockfish searches up to 12 individual turns ahead for a move-by-move review. Switch between Beginner (plain language and notation explanations) and Advanced (standard chess terms). The free coach explains threats and alternatives, shows a best-move arrow, and offers practice tips. Reviews and selected moves are kept per game while the app is open. Win chances and accuracy are estimates, not official Lichess measurements.
-- **Opening explorer:** Compare book moves at the position on the board. If the Lichess community database isn't available anonymously, the app uses the Lichess Masters database instead.
+- **Opening explorer:** See the current position’s opening and ECO code when available, plus win, draw, and loss rates for up to eight moves. Click a move to play it on your turn or explore a variation in the coach without changing the recorded game. If the Lichess community database isn't available anonymously, the app uses the Lichess Masters database instead.
 
 ## Optional LLM coach
 

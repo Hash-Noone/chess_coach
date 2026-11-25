@@ -134,9 +134,17 @@ main > .notice { margin: 0 0 15px; }
 .opening { margin: 0 0 0 35px; }
 .opening > p { margin-top: 8px; }
 .opening-name { color: var(--gold); font-size: 13px; }
+.play-board-stack .opening { margin-top: 14px; }
+.opening-variation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 12px 35px; font-size: 13px; }
+.load-position { margin-top: 14px; }
+.load-position form button { margin-top: 8px; }
+.book-legend { font-size: 12px; }
 .book-moves { display: grid; gap: 8px; margin-top: 12px; }
-.book-move { display: grid; grid-template-columns: 33px minmax(0, 1fr) 63px; gap: 8px; align-items: center; font-size: 13px; }
-.book-move small { color: var(--muted); text-align: right; }
+.book-move { display: grid; grid-template-columns: 1fr auto; gap: 5px 8px; align-items: center; padding: 6px 8px; text-align: left; font-size: 13px; color: var(--text); background: #1b241d; border: 1px solid var(--line); border-radius: 7px; }
+.book-move:not(:disabled):hover { background: #263529; border-color: #5f805a; }
+.book-move small, .book-results { color: var(--muted); }
+.book-results { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 11px; }
+.book-results .book-bar { flex: 1; }
 .book-bar { display: flex; background: #2c392e; height: 8px; border-radius: 10px; overflow: hidden; }
 .book-bar span:nth-child(1) { background: #dce3ce; }
 .book-bar span:nth-child(2) { background: #769081; }
@@ -184,7 +192,7 @@ footer a:hover { text-decoration: underline; }
   .page-decoration { right: -14px; font-size: 198px; bottom: -68px; }
   .workspace, .library-layout { grid-template-columns: minmax(0, 1fr); }
   .board-row { grid-template-columns: 23px minmax(0, 1fr); gap: 5px; }
-  .player, .board-navigation, .opening { margin-left: 28px; }
+  .player, .board-navigation, .opening, .opening-variation { margin-left: 28px; }
   .inline-note { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -192,5 +200,5 @@ footer a:hover { text-decoration: underline; }
 }
 @media (max-width: 665px), (pointer: coarse) {
   .icon-button, nav button { min-width: 44px; min-height: 44px; }
-  button.move, .button, .segmented button, .key-moments button { min-height: 44px; }
+  button.move, .button, .segmented button, .key-moments button, .book-move { min-height: 44px; }
 }
