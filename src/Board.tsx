@@ -6,6 +6,7 @@ import { winChance } from './coach'
 import type { Evaluation } from './engine'
 
 type Props = {
+  id: string
   fen: string
   orientation: Color
   bottomName: string
@@ -14,12 +15,13 @@ type Props = {
   evaluation?: Evaluation
   highlight?: Pick<Move, 'from' | 'to'>
   arrow?: string
+  animate?: boolean
   canPlay?: boolean
   onMove?: (from: string, to: string, promotion?: string) => boolean
   onFlip: () => void
 }
 
-export function Board({ fen, orientation, bottomName, topName, showTurn, evaluation, highlight, arrow, canPlay, onMove, onFlip }: Props) {
+export function Board({ id, fen, orientation, bottomName, topName, showTurn, evaluation, highlight, arrow, animate = false, canPlay, onMove, onFlip }: Props) {
   const [selected, setSelected] = useState<{ fen: string; square: Square }>()
   const [pending, setPending] = useState<{ fen: string; from: string; to: string }>()
   const board = new Chess(fen)
@@ -67,10 +69,10 @@ export function Board({ fen, orientation, bottomName, topName, showTurn, evaluat
       </div>
       <div className="board-frame">
         <Chessboard options={{
-          position: fen, boardOrientation: orientation === 'w' ? 'white' : 'black',
+          id, position: fen, boardOrientation: orientation === 'w' ? 'white' : 'black',
           lightSquareStyle: { backgroundColor: '#dce3ce', color: '#455d49' },
           darkSquareStyle: { backgroundColor: '#68816a', color: '#edf0e4' },
-          squareStyles, animationDurationInMs: 150, allowDragging: !!canPlay && !promotion,
+          squareStyles, showAnimations: animate, animationDurationInMs: 150, allowDragging: !!canPlay && !promotion,
           allowDrawingArrows: false, clearArrowsOnClick: false, clearArrowsOnPositionChange: false,
           arrows: arrow ? [{ startSquare: arrow.slice(0, 2), endSquare: arrow.slice(2, 4), color: '#dfad51' }] : [],
           canDragPiece: ({ piece }) => !!canPlay && piece.pieceType[0] === board.turn(),

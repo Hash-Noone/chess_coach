@@ -95,7 +95,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   }
 
   return <div className="workspace">
-    <Board fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'}
+    <Board id="play-board" fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
       showTurn={!game.isGameOver()} evaluation={value} highlight={lastMove}
       canPlay={isHumanTurn && !game.isGameOver()} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
     <aside className="side-stack">

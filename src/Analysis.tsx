@@ -99,7 +99,7 @@ export function Analysis({ selected, onLibrary, settings, connection, onConnect,
 
   return <div className="workspace">
     <div>
-      <div ref={boardRef}><Board fen={fen} orientation={orientation} bottomName={orientation === 'w' ? selected.white : selected.black} topName={orientation === 'w' ? selected.black : selected.white}
+      <div ref={boardRef}><Board id="review-board" fen={fen} orientation={orientation} bottomName={orientation === 'w' ? selected.white : selected.black} topName={orientation === 'w' ? selected.black : selected.white}
         evaluation={scores[bestView ? ply - 1 : ply]} highlight={bestView ? undefined : current} arrow={bestView || undefined}
         onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} /></div>
       <div className="board-navigation">
