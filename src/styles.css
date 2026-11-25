@@ -16,10 +16,10 @@
 }
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .46; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 a { color: var(--mint); }
 h1, h2, h3, .brand { font-family: 'Space Grotesk', system-ui, sans-serif; }
 h1, h2, h3, p { margin: 0; }
@@ -54,7 +54,7 @@ main { max-width: 1192px; margin: auto; padding: 27px 28px 0; }
 .field-label { display: flex; align-items: center; gap: 7px; color: #dae4d9; font-size: 13px; font-weight: 700; margin: 18px 0 8px; }
 .strength-label { justify-content: space-between; }
 .strength-label span { color: var(--mint); font-weight: 700; }
-input:not([type=range]), textarea { display: block; width: 100%; padding: 11px 13px; border: 1px solid #3d4b40; border-radius: 8px; background: #151b16; color: var(--text); }
+input:not([type=range]), textarea, select { display: block; width: 100%; padding: 11px 13px; border: 1px solid #3d4b40; border-radius: 8px; background: #151b16; color: var(--text); }
 input::placeholder, textarea::placeholder { color: #89988b; }
 textarea { resize: vertical; }
 input[type=range] { width: 100%; margin: 2px 0 15px; accent-color: var(--mint); cursor: pointer; }
@@ -156,6 +156,13 @@ progress { display: block; width: 100%; height: 10px; margin-top: 6px; accent-co
 .move-review p { margin: 5px 0; font-size: 14px; line-height: 1.5; }
 .move-review small { font-size: 12px; }
 .quality { color: var(--quality); font-size: 12px; font-weight: 700; }
+.about-training summary, .coach-settings summary { cursor: pointer; font-weight: 700; font-size: 14px; }
+.coach-settings summary svg, .coach-reply svg { vertical-align: text-bottom; color: var(--mint); }
+.coach-settings summary .badge { float: right; }
+.about-training p, .coach-settings > p, .about-training a, .section-heading + .muted { margin-top: 8px; }
+.coach-reply { border-left: 2px solid #73975d; padding-left: 10px; margin-top: 13px; }
+.coach-reply strong { color: var(--mint); font-size: 13px; }
+.coach-reply p { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
 footer { border-top: 1px solid #2d382e; margin-top: 28px; padding: 15px 0 21px; display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 footer a { display: flex; align-items: center; gap: 6px; text-decoration: none; }
 footer a:hover { text-decoration: underline; }

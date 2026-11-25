@@ -97,13 +97,13 @@ export function Board({ fen, orientation, bottomName, topName, showTurn, evaluat
   </section>
 }
 
-export function gameLabel(game: Chess, human: Color) {
-  if (game.isCheckmate()) return game.turn() === human ? 'Stockfish wins by checkmate' : 'You win by checkmate!'
+export function gameLabel(game: Chess, human: Color, engineName: string) {
+  if (game.isCheckmate()) return game.turn() === human ? `${engineName} wins by checkmate` : 'You win by checkmate!'
   if (game.isStalemate()) return 'Draw by stalemate'
   if (game.isInsufficientMaterial()) return 'Draw by insufficient material'
   if (game.isThreefoldRepetition()) return 'Draw by repetition'
   if (game.isDraw()) return 'Draw'
-  return game.turn() === human ? (game.isCheck() ? 'Your king is in check' : 'Your turn to move') : 'Stockfish is thinking…'
+  return game.turn() === human ? (game.isCheck() ? 'Your king is in check' : 'Your turn to move') : `${engineName} is thinking…`
 }
 
 export function MoveTable({ moves, position, onSelect, ratings }: {

@@ -3,13 +3,23 @@ import { Chess, type Color } from 'chess.js'
 import { ChevronLeft, ChevronRight, CircleStop, ExternalLink, Lightbulb, ListOrdered, SkipBack, SkipForward, Sparkles, Target } from 'lucide-react'
 import { Board, MoveTable } from './Board'
 import { reviewMove, summarize, type Review } from './coach'
+import { AskCoach, GeneratedCoachText, useCoachReply } from './CoachReplies'
+import { CoachSettingsPanel } from './CoachSettings'
 import { Stockfish, type Evaluation } from './engine'
 import { readGame, type SavedGame } from './games'
+import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
 
 const depth = 12
 
-export function Analysis({ selected, onLibrary }: { selected: SavedGame; onLibrary: () => void }) {
+export function Analysis({ selected, onLibrary, settings, connection, onConnect, onDisconnect }: {
+  selected: SavedGame
+  onLibrary: () => void
+  settings: CoachSettings
+  connection?: CoachConnection
+  onConnect: (connection: CoachConnection) => void
+  onDisconnect: () => void
+}) {
   const [moves] = useState(() => readGame(selected.pgn).history({ verbose: true }))
   const [ply, setPly] = useState(0)
   const [showBest, setShowBest] = useState(false)
@@ -66,6 +76,11 @@ export function Analysis({ selected, onLibrary }: { selected: SavedGame; onLibra
   const fen = bestView ? current.before : current?.after ?? moves[0].before
   const summary = reviews.length === moves.length ? summarize(moves, reviews) : undefined
   const percent = Math.floor(reviews.length / moves.length * 100)
+  const facts = review && scores[ply - 1] && scores[ply] ? moveFacts(current, review, scores[ply - 1], scores[ply]) : undefined
+  const generatedMove = useCoachReply(connection, facts && movePrompt(facts))
+  const generatedSummary = useCoachReply(connection, summary && scores.length === moves.length + 1
+    ? summaryPrompt(summary, summary.keyMoments.map(moment => moveFacts(moment.move, moment, scores[moment.index], scores[moment.index + 1])))
+    : undefined)
 
   return <div className="workspace">
     <div>
@@ -108,8 +123,10 @@ export function Analysis({ selected, onLibrary }: { selected: SavedGame; onLibra
           )}</div> : <p className="muted">No major evaluation drops at this depth.</p>}
           <div className="field-label"><Lightbulb size={16} /> Practice tips</div>
           <ul>{summary.tips.map(tip => <li key={tip}>{tip}</li>)}</ul>
+          <GeneratedCoachText reply={generatedSummary} title="LLM game recap" />
         </div>}
       </section>
+      <CoachSettingsPanel settings={settings} connection={connection} onSave={onConnect} onDisconnect={onDisconnect} />
       <section className="panel section-pad">
         <div className="section-heading"><ListOrdered size={18} /><h3>Move breakdown</h3><span className="badge subtle">{moves.length} plies</span></div>
         <MoveTable moves={moves} position={ply} onSelect={go} ratings={reviews.map(item => item.quality)} />
@@ -117,11 +134,13 @@ export function Analysis({ selected, onLibrary }: { selected: SavedGame; onLibra
           {review ? <>
             <div className="section-heading"><h3>{current.san}</h3><span className={`quality ${review.quality.toLowerCase()}`}>{review.quality}</span></div>
             <p>{review.explanation}</p>
-            <small className="muted">{review.loss} cp loss · {review.winDrop.toFixed(1)} point win chance drop</small>
+            <small className="muted">Rule-based · {scores[ply - 1]?.mate === undefined && scores[ply]?.mate === undefined ? `${review.loss} cp loss · ` : ''}{review.winDrop.toFixed(1)} point win chance drop</small>
+            <GeneratedCoachText reply={generatedMove} title="LLM move explanation" />
             {review.bestMove && <button className="button secondary full" onClick={() => setShowBest(value => !value)}><Target size={16} /> {showBest ? 'Return to played move' : `Show best move: ${review.bestSan}`}</button>}
           </> : <p className="muted">{ply === 0 ? 'Select a move to see the coach’s explanation.' : 'Run analysis to get feedback on this move.'}</p>}
         </div>
       </section>
+      <AskCoach key={fen} connection={connection} fen={fen} evaluation={scores[bestView ? ply - 1 : ply]} move={facts} />
     </aside>
   </div>
 }

@@ -3,10 +3,11 @@ import { ChevronRight, Crown, Database, Github, Sparkles, Swords } from 'lucide-
 import { Analysis } from './Analysis'
 import { library, loadSavedGames, storeGames, type SavedGame } from './games'
 import { Library } from './Library'
+import { loadCoachSettings, storeCoachSettings, type CoachConnection } from './llm'
 import { Play } from './Play'
 
 const modes = [
-  { id: 'play', name: 'Play', icon: Swords, title: 'Play the engine', subtitle: 'Sharpen your game against Stockfish, on your terms.' },
+  { id: 'play', name: 'Play', icon: Swords, title: 'Play the engine', subtitle: 'Train against a Lichess-trained opponent or take on Stockfish.' },
   { id: 'library', name: 'Game library', icon: Database, title: 'Game library', subtitle: 'Bring in your games or study a classic from the practice collection.' },
   { id: 'coach', name: 'AI coach', icon: Sparkles, title: 'Review a game', subtitle: 'See why moves worked, where things changed, and what to practice.' },
 ] as const
@@ -17,6 +18,8 @@ export function App() {
   const [saved, setSaved] = useState(loadSavedGames)
   const [selected, setSelected] = useState<SavedGame>(library[0])
   const [storageError, setStorageError] = useState(false)
+  const [coachSettings, setCoachSettings] = useState(loadCoachSettings)
+  const [connection, setConnection] = useState<CoachConnection>()
   const page = modes.find(item => item.id === mode)!
 
   function persist(games: SavedGame[]) {
@@ -49,7 +52,14 @@ export function App() {
       {storageError && <p className="notice error" role="alert">This browser could not save games to local storage. Games will be kept until you close the page.</p>}
       <div hidden={mode !== 'play'}><Play active={mode === 'play'} onReview={game => { persist([game]); open(game) }} /></div>
       <div hidden={mode !== 'library'}><Library saved={saved} onSave={persist} onOpen={open} /></div>
-      {mode === 'coach' && <Analysis key={selected.id} selected={selected} onLibrary={() => setMode('library')} />}
+      {mode === 'coach' && <Analysis key={selected.id} selected={selected} onLibrary={() => setMode('library')}
+        settings={coachSettings} connection={connection} onConnect={next => {
+          const { provider, baseUrl, model } = next
+          const settings = { provider, baseUrl, model }
+          try { storeCoachSettings(settings) } catch { /* The connection still works for this tab. */ }
+          setCoachSettings(settings)
+          setConnection(next)
+        }} onDisconnect={() => setConnection(undefined)} />}
       <footer><span>ChessCoach <span className="footer-divider">·</span> Stockfish analysis and Lichess game data</span><a href="https://github.com/Hash-Noone/chess-coach" target="_blank" rel="noreferrer"><Github size={15} /> Source</a></footer>
     </main>
   </>

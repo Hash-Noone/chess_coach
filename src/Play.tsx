@@ -4,6 +4,8 @@ import { Activity, Cpu, RotateCcw, Sparkles, Swords, Undo2 } from 'lucide-react'
 import { Board, gameLabel, MoveTable } from './Board'
 import { coordinateMove, Stockfish, type Evaluation } from './engine'
 import { savePgn, type SavedGame } from './games'
+import { loadTrainedStats, type TrainingStats } from './learned-assets'
+import { TrainedEngine } from './trained-engine'
 
 function copyGame(game: Chess, keep = game.history().length) {
   const moves = game.history({ verbose: true })
@@ -21,13 +23,24 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [canStart, setCanStart] = useState(false)
+  const [engineType, setEngineType] = useState<'trained' | 'stockfish'>('trained')
+  const [training, setTraining] = useState<TrainingStats>()
+  const engineName = engineType === 'trained' ? 'Lichess-trained engine' : 'Stockfish'
+
+  useEffect(() => {
+    let mounted = true
+    void loadTrainedStats().then(stats => { if (mounted) setTraining(stats) }).catch(() => {})
+    return () => { mounted = false }
+  }, [])
 
   useEffect(() => {
     if (!active || !canStart) return
-    const engine = new Stockfish()
     let stopped = false
     const toPlay = game.turn() !== human && !game.isGameOver()
-    void engine.analyze(game, toPlay ? 5 + skill : 10, toPlay ? (skill - 1) * 4 : 20)
+    const engine = engineType === 'trained' ? new TrainedEngine() : new Stockfish()
+    const request = engine instanceof TrainedEngine ? engine.analyze(game, skill, toPlay)
+      : engine.analyze(game, toPlay ? 5 + skill : 10, toPlay ? (skill - 1) * 4 : 20)
+    void request
       .then(result => {
         if (stopped) return
         setEvaluated({ fen: game.fen(), value: result })
@@ -40,7 +53,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
         if (!stopped) setError(reason.message)
       }).finally(() => engine.close())
     return () => { stopped = true; engine.close() }
-  }, [active, canStart, game, human, retry, skill])
+  }, [active, canStart, engineType, game, human, retry, skill])
 
   function start(color = human) {
     setHuman(color)
@@ -71,21 +84,30 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
 
   function review() {
     const copy = copyGame(game)
-    copy.setHeader('White', human === 'w' ? 'You' : 'Stockfish')
-    copy.setHeader('Black', human === 'b' ? 'You' : 'Stockfish')
+    copy.setHeader('White', human === 'w' ? 'You' : engineName)
+    copy.setHeader('Black', human === 'b' ? 'You' : engineName)
     copy.setHeader('Result', game.isCheckmate() ? (game.turn() === 'w' ? '0-1' : '1-0') : game.isDraw() ? '1/2-1/2' : '*')
     onReview(savePgn(copy.pgn(), 'engine'))
   }
 
   return <div className="workspace">
-    <Board fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : 'Stockfish'} topName={orientation === human ? 'Stockfish' : 'You'}
+    <Board fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'}
       showTurn={!game.isGameOver()} evaluation={value} highlight={lastMove}
       canPlay={isHumanTurn && !game.isGameOver()} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
     <aside className="side-stack">
       <section className="panel section-pad">
         <div className="eyebrow"><Swords size={15} /> ENGINE MATCH</div>
-        <h2>Play Stockfish</h2>
-        <p className="muted">Pick a side and a level, then make your first move.</p>
+        <h2>Engine match</h2>
+        <p className="muted">Pick an engine, a side, and a level.</p>
+        <label className="field-label" htmlFor="play-engine">Opponent</label>
+        <select id="play-engine" value={engineType} onChange={event => {
+          setEngineType(event.target.value === 'stockfish' ? 'stockfish' : 'trained')
+          setEvaluated(undefined)
+          setError('')
+        }}>
+          <option value="trained">Lichess-trained engine</option>
+          <option value="stockfish">Stockfish</option>
+        </select>
         <div className="field-label">Play as</div>
         <div className="segmented">
           <button className={human === 'w' ? 'selected' : ''} onClick={() => { if (human !== 'w') start('w') }}><span className="color-dot white" /> White</button>
@@ -103,12 +125,18 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
       </section>
       <section className="panel section-pad">
         <div className="section-heading"><Activity size={17} /><h3>Game moves</h3><span className="badge subtle">{moves.length} plies</span></div>
-        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : gameLabel(game, human)}</p>
+        <p className="game-status" role="status"><span className={`status-dot ${!isHumanTurn && !game.isGameOver() && !error ? 'pulse' : ''}`} />{error && !isHumanTurn ? 'Engine stopped' : gameLabel(game, human, engineName)}</p>
         {error && <div className="notice error">{error} <button className="link-button" onClick={() => { setError(''); setRetry(value => value + 1) }}>Retry</button></div>}
         <MoveTable moves={moves} />
         {moves.length > 0 && <button className="button secondary full" onClick={review}><Sparkles size={16} /> Review this game</button>}
       </section>
-      <div className="inline-note"><Cpu size={15} /> Stockfish runs locally in your browser.</div>
+      {training && <details className="panel section-pad about-training">
+        <summary>About the trained engine</summary>
+        <p className="muted">Trained on {training.evaluationTrainingPositions.toLocaleString()} Lichess evaluated positions and {training.gameTrainingPositions.toLocaleString()} positions from {training.games.toLocaleString()} rated games ({training.gameArchiveMonth}). The same games supplied its opening book.</p>
+        <p className="muted">On {training.validationPositions.toLocaleString()} held-out evaluations, the average error was {training.validationMaeCp} centipawns ({training.materialMaeCp} for material alone); {training.validationWithinOnePawn}% were within one pawn.</p>
+        <a className="link-button" href="https://database.lichess.org/" target="_blank" rel="noreferrer">Lichess Open Database</a>
+      </details>}
+      <div className="inline-note"><Cpu size={15} /> Both engines run locally in your browser.</div>
     </aside>
   </div>
 }
