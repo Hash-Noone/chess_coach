@@ -119,7 +119,7 @@ it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async sta
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ answer: 'Take the center.' })
     expect(fetchUpstream).toHaveBeenCalledTimes(2)
-    expect(fetchUpstream.mock.calls[0][1].signal).toBe(fetchUpstream.mock.calls[1][1].signal)
+    expect(fetchUpstream.mock.calls[0][1].signal).not.toBe(fetchUpstream.mock.calls[1][1].signal)
   })
 })
 
@@ -229,5 +229,21 @@ it('times out an upstream request without returning its diagnostic', async () =>
     const response = await send()
     expect(response.status).toBe(502)
     expect(await response.json()).toEqual({ error: 'Built-in coach unavailable.' })
+  })
+})
+
+it('retries a stalled Gemini attempt while there is time left in the shared deadline', async () => {
+  const fetchUpstream = vi.fn()
+    .mockImplementationOnce((_url, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    }))
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, timeoutMs: 1000, attemptTimeoutMs: 20 }, async ({ send }) => {
+    const response = await send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ answer: 'Take the center.' })
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+    expect(fetchUpstream.mock.calls[0][1].signal.reason?.name).toBe('TimeoutError')
+    expect(fetchUpstream.mock.calls[1][1].signal.aborted).toBe(false)
   })
 })
