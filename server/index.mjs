@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
+import { pipeline } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { createCoachHandler } from './coach.mjs'
 
@@ -33,7 +34,7 @@ async function serve(req, res) {
       'Content-Length': info.size,
     })
     if (req.method === 'HEAD') res.end()
-    else createReadStream(file).on('error', () => res.destroy()).pipe(res)
+    else pipeline(createReadStream(file), res, () => {})
   } catch {
     res.writeHead(404).end('Not found')
   }
