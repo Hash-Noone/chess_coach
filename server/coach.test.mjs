@@ -4,6 +4,7 @@ import { createCoachHandler } from './coach.mjs'
 
 const testKey = 'unit-test-server-key'
 const prompt = { system: 'Use only the engine facts.', user: 'Explain d4.' }
+const geminiReply = text => Response.json({ candidates: [{ content: { parts: [{ text }] } }] })
 
 async function withCoach(options, run) {
   const handler = createCoachHandler(options)
@@ -25,24 +26,26 @@ async function withCoach(options, run) {
   }
 }
 
-it('reports availability and sends grounded prompts with the key only in Anthropic headers', async () => {
-  const fetchUpstream = vi.fn().mockResolvedValue(Response.json({ content: [{ type: 'text', text: 'Take the center.' }] }))
-  await withCoach({ apiKey: testKey, model: 'claude-configured', fetchUpstream }, async ({ status, send }) => {
+it('reports availability and sends grounded prompts with the key only in Gemini headers', async () => {
+  const fetchUpstream = vi.fn().mockResolvedValue(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, model: 'gemini-configured', fetchUpstream }, async ({ status, send }) => {
     expect(await (await status()).json()).toEqual({ available: true })
     expect(await (await send()).json()).toEqual({ answer: 'Take the center.' })
     expect(fetchUpstream).toHaveBeenCalledOnce()
     const [url, request] = fetchUpstream.mock.calls[0]
-    expect(url).toBe('https://api.anthropic.com/v1/messages')
-    expect(request.headers['x-api-key']).toBe(testKey)
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-configured:generateContent')
+    expect(request.headers['x-goog-api-key']).toBe(testKey)
     expect(request.redirect).toBe('error')
     expect(JSON.parse(request.body)).toMatchObject({
-      model: 'claude-configured', system: prompt.system, messages: [{ role: 'user', content: prompt.user }],
+      systemInstruction: { parts: [{ text: prompt.system }] },
+      contents: [{ role: 'user', parts: [{ text: prompt.user }] }],
+      generationConfig: { maxOutputTokens: 450 },
     })
     expect(request.body).not.toContain(testKey)
   })
 })
 
-it('does not call Anthropic when no key is configured', async () => {
+it('does not call Gemini when no key is configured', async () => {
   const fetchUpstream = vi.fn()
   await withCoach({ apiKey: '', fetchUpstream }, async ({ status, send }) => {
     expect(await (await status()).json()).toEqual({ available: false })
@@ -54,7 +57,7 @@ it('does not call Anthropic when no key is configured', async () => {
 it('returns the same safe fallback on upstream errors and accidental credential echoes', async () => {
   const fetchUpstream = vi.fn()
     .mockResolvedValueOnce(new Response(testKey, { status: 401 }))
-    .mockResolvedValueOnce(Response.json({ content: [{ type: 'text', text: testKey }] }))
+    .mockResolvedValueOnce(geminiReply(testKey))
   await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
     for (const _ of [0, 1]) {
       const response = await send()
@@ -65,7 +68,7 @@ it('returns the same safe fallback on upstream errors and accidental credential 
 })
 
 it('rejects oversized bodies and caps upstream requests per client', async () => {
-  const fetchUpstream = vi.fn(() => Response.json({ content: [{ type: 'text', text: 'Take the center.' }] }))
+  const fetchUpstream = vi.fn(() => geminiReply('Take the center.'))
   await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
     expect((await send({ ...prompt, user: 'x'.repeat(33 * 1024) })).status).toBe(413)
     expect(fetchUpstream).not.toHaveBeenCalled()

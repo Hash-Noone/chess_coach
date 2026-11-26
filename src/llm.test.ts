@@ -56,7 +56,7 @@ describe('grounded coach prompts', () => {
   })
 })
 
-describe('built-in Claude', () => {
+describe('built-in Gemini', () => {
   it('uses the same-origin coach endpoints and sends the grounded prompt without a credential', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json({ available: true }))

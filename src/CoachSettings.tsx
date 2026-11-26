@@ -33,11 +33,11 @@ export function CoachSettingsPanel({ settings, connection, builtInAvailable, onT
   }
 
   return <details className="panel section-pad coach-settings">
-    <summary><KeyRound size={16} /> Coach settings <span className="badge subtle">{isBuiltIn ? 'Built-in Claude' : isCustom ? 'Custom LLM' : 'Rule-based'}</span></summary>
+    <summary><KeyRound size={16} /> Coach settings <span className="badge subtle">{isBuiltIn ? 'Built-in Gemini' : isCustom ? 'Custom LLM' : 'Rule-based'}</span></summary>
     {builtInAvailable && <>
-      <p className="muted">Built-in Claude sends relevant positions, analysis, and your questions to Anthropic. The host’s API key never reaches your browser.</p>
+      <p className="muted">Built-in Gemini sends relevant positions, analysis, and your questions to Google. The host’s API key never reaches your browser.</p>
       {!isCustom && <button type="button" className="button secondary full" onClick={onToggleBuiltIn}>
-        {isBuiltIn ? 'Use rule-based coach' : 'Use built-in Claude'}
+        {isBuiltIn ? 'Use rule-based coach' : 'Use built-in Gemini'}
       </button>}
     </>}
     <p className="muted">You can also connect your own provider. It receives the same chess information, and requests may incur charges. Your API key stays in this tab’s memory and is erased on reload; only your provider settings are saved.</p>

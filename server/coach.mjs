@@ -20,8 +20,8 @@ async function readPrompt(req) {
 }
 
 export function createCoachHandler({
-  apiKey = process.env.ANTHROPIC_API_KEY?.trim() || '',
-  model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-4-6',
+  apiKey = process.env.GEMINI_API_KEY?.trim() || '',
+  model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
   fetchUpstream = globalThis.fetch,
   timeoutMs = 15_000,
 } = {}) {
@@ -68,11 +68,16 @@ export function createCoachHandler({
     const disconnect = () => controller.abort()
     res.once('close', disconnect)
     try {
-      const response = await fetchUpstream('https://api.anthropic.com/v1/messages', {
+      const response = await fetchUpstream(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
-          model, max_tokens: 450, system: prompt.system, messages: [{ role: 'user', content: prompt.user }],
+          systemInstruction: { parts: [{ text: prompt.system }] },
+          contents: [{ role: 'user', parts: [{ text: prompt.user }] }],
+          generationConfig: {
+            maxOutputTokens: 450,
+            ...(model === 'gemini-2.5-flash' ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          },
         }),
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]),
         redirect: 'error',
@@ -82,8 +87,9 @@ export function createCoachHandler({
         throw new Error()
       }
       const data = await response.json()
-      const answer = Array.isArray(data?.content) ? data.content
-        .filter(part => part?.type === 'text' && typeof part.text === 'string')
+      const parts = data?.candidates?.[0]?.content?.parts
+      const answer = Array.isArray(parts) ? parts
+        .filter(part => !part?.thought && typeof part?.text === 'string')
         .map(part => part.text).join('\n').trim() : ''
       if (!answer || answer.includes(apiKey)) throw new Error()
       if (!res.destroyed) json(res, 200, { answer })

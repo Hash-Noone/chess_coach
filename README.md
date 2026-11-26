@@ -1,6 +1,6 @@
 # Chess Coach
 
-Play Stockfish, build a library of games, and review each move with plain-language coaching. The rule-based coach, engines, and library work without an account or API key. An optional Node server provides a built-in Claude coach.
+Play Stockfish, build a library of games, and review each move with plain-language coaching. The rule-based coach, engines, and library work without an account or API key. An optional Node server provides a built-in Gemini coach.
 
 ## Run locally
 
@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. Run `npm test` for the coach and import tests, or `npm run build` for the browser build in `dist/`. Set `ANTHROPIC_API_KEY` in the dev server environment before starting Vite to test built-in Claude.
+Open the URL printed by Vite. Run `npm test` for the coach and import tests, or `npm run build` for the browser build in `dist/`. Set `GEMINI_API_KEY` in the dev server environment before starting Vite to test built-in Gemini.
 
 ## What's inside
 
@@ -20,9 +20,9 @@ Open the URL printed by Vite. Run `npm test` for the coach and import tests, or 
 - **AI coach:** Stockfish searches up to 12 individual turns ahead for a move-by-move review. Switch between Beginner (plain language and notation explanations) and Advanced (standard chess terms). The free coach explains threats and alternatives, shows a best-move arrow, and offers practice tips. Reviews and selected moves are kept per game while the app is open. Win chances and accuracy are estimates, not official Lichess measurements.
 - **Opening explorer:** See the current position’s opening and ECO code when available, plus win, draw, and loss rates for up to eight moves. Click a move to play it on your turn or explore a variation in the coach without changing the recorded game. If the Lichess community database isn't available anonymously, the app uses the Lichess Masters database instead.
 
-## Built-in Claude and custom providers
+## Built-in Gemini and custom providers
 
-Built-in Claude is the default when the app server has an Anthropic key. Visitors don't need a key. If the server is not configured or a request fails, the existing rule-based review remains available. Visitors can also switch to the rule-based coach in **AI coach → Coach settings**.
+Built-in Gemini is the default when the app server has a Gemini key. Visitors don't need a key. If the server is not configured or a request fails, the existing rule-based review remains available. Visitors can also switch to the rule-based coach in **AI coach → Coach settings**.
 
 In **Coach settings**, visitors can alternatively connect an OpenAI-compatible Chat Completions endpoint or Anthropic Messages with their own model and API key. For an OpenAI-compatible provider, enter an API base URL such as `https://api.openai.com/v1`, not the full completions route. The provider must allow cross-origin browser requests; Anthropic uses its explicit direct-browser-access header. A visitor's key is kept only in tab memory and removed on disconnect or reload; the provider, URL, and model are remembered in local storage.
 
@@ -30,7 +30,7 @@ The LLM receives engine facts for the game recap and each analyzed move you sele
 
 ## Deploy
 
-For **built-in Claude**, deploy to a Node.js 24 host. Configure `ANTHROPIC_API_KEY` as a server secret; never put it in a `VITE_*` variable. Then run:
+For **built-in Gemini**, deploy to a Node.js 24 host. Configure `GEMINI_API_KEY` as a server secret; never put it in a `VITE_*` variable. Then run:
 
 ```sh
 npm ci
@@ -38,7 +38,7 @@ npm run build
 npm start
 ```
 
-`npm start` serves `dist/` and the coach API on the same origin (default `0.0.0.0:5173`; override with `HOST` and `PORT`). Set `ANTHROPIC_MODEL` to override `claude-sonnet-4-6`. The API caps requests at 32 KiB, allows 15 coaching requests per minute per connection IP, and times out upstream calls after 15 seconds. Clients behind a reverse proxy share its IP limit; for public deployments, serve over HTTPS and configure provider spend limits.
+`npm start` serves `dist/` and the coach API on the same origin (default `0.0.0.0:5173`; override with `HOST` and `PORT`). Set `GEMINI_MODEL` to override `gemini-2.5-flash`. The API caps requests at 32 KiB, allows 15 coaching requests per minute per connection IP, and times out upstream calls after 15 seconds. Clients behind a reverse proxy share its IP limit; for public deployments, serve over HTTPS and configure provider spend limits.
 
 For **static hosting**, set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**. The Pages workflow checks PRs and deploys builds from `main`. Relative asset URLs support the project site. GitHub Pages does not run the Node coach server; visitors still have rule-based coaching and custom providers there.
 
