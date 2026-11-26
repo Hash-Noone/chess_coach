@@ -4,7 +4,7 @@ import { Analysis, initialReview, type ReviewState } from './Analysis'
 import type { CoachLevel } from './coach'
 import { library, loadSavedGames, storeGames, type SavedGame } from './games'
 import { Library } from './Library'
-import { loadCoachSettings, storeCoachSettings, type CoachConnection } from './llm'
+import { builtInCoach, builtInCoachAvailable, loadCoachSettings, storeCoachSettings, type CoachConnection } from './llm'
 import { Play } from './Play'
 import { readRoute, routeHash, type Route, type Mode } from './routes'
 
@@ -20,7 +20,10 @@ export function App() {
   const [lastGameId, setLastGameId] = useState<string>()
   const [storageError, setStorageError] = useState(false)
   const [coachSettings, setCoachSettings] = useState(loadCoachSettings)
-  const [connection, setConnection] = useState<CoachConnection>()
+  const [customCoach, setCustomCoach] = useState<CoachConnection>()
+  const [builtInAvailable, setBuiltInAvailable] = useState(false)
+  const [builtInEnabled, setBuiltInEnabled] = useState(true)
+  const connection = customCoach ?? (builtInAvailable && builtInEnabled ? builtInCoach : undefined)
   const [coachLevel, setCoachLevel] = useState<CoachLevel>('beginner')
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({})
   const page = modes.find(item => item.id === mode)!
@@ -36,6 +39,14 @@ export function App() {
     const syncRoute = () => setRoute(readRoute(window.location.hash))
     window.addEventListener('hashchange', syncRoute)
     return () => window.removeEventListener('hashchange', syncRoute)
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void builtInCoachAvailable(controller.signal).then(available => {
+      if (!controller.signal.aborted) setBuiltInAvailable(available)
+    })
+    return () => controller.abort()
   }, [])
 
   function navigate(next: Route) {
@@ -82,13 +93,14 @@ export function App() {
         state={reviews[selected.id] ?? initialReview} update={apply => setReviews(old => ({
           ...old, [selected.id]: apply(old[selected.id] ?? initialReview),
         }))} level={coachLevel} onLevel={setCoachLevel}
-        settings={coachSettings} connection={connection} onConnect={next => {
+        settings={coachSettings} connection={connection} builtInAvailable={builtInAvailable}
+        onToggleBuiltIn={() => setBuiltInEnabled(enabled => !enabled)} onConnect={next => {
           const { provider, baseUrl, model } = next
           const settings = { provider, baseUrl, model }
           try { storeCoachSettings(settings) } catch { /* The connection still works for this tab. */ }
           setCoachSettings(settings)
-          setConnection(next)
-        }} onDisconnect={() => setConnection(undefined)} /></div>}
+          setCustomCoach(next)
+        }} onDisconnect={() => setCustomCoach(undefined)} /></div>}
       <footer><span>ChessCoach <span className="footer-divider">·</span> Stockfish analysis and Lichess game data</span><a href="https://github.com/Hash-Noone/chess_coach" target="_blank" rel="noopener"><Github size={15} /> Source</a></footer>
     </main>
   </>

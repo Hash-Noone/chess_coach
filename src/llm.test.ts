@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reviewMove, summarize } from './coach'
-import { moveFacts, movePrompt, providerUrl, questionPrompt, requestCoach, summaryPrompt, type CoachConnection } from './llm'
+import { builtInCoach, builtInCoachAvailable, moveFacts, movePrompt, providerUrl, questionPrompt, requestCoach, summaryPrompt, type CoachConnection } from './llm'
 
 const connection: CoachConnection = { provider: 'openai', baseUrl: 'https://provider.example/v1/', model: 'example-model', apiKey: 'unit-test-only' }
 const board = new Chess()
@@ -53,5 +53,40 @@ describe('grounded coach prompts', () => {
     const fetch = vi.fn().mockResolvedValue(new Response('private diagnostic', { status: 401 }))
     vi.stubGlobal('fetch', fetch)
     await expect(requestCoach(connection, movePrompt(facts))).rejects.toThrow('rejected the API key')
+  })
+})
+
+describe('built-in Claude', () => {
+  it('uses the same-origin coach endpoints and sends the grounded prompt without a credential', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ available: true }))
+      .mockResolvedValueOnce(Response.json({ answer: 'Moving g4 allows Qh4#.' }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await builtInCoachAvailable()).toBe(true)
+    const prompt = movePrompt(facts)
+    expect(await requestCoach(builtInCoach, prompt)).toBe('Moving g4 allows Qh4#.')
+    expect(fetch.mock.calls[0][0]).toBe('./api/coach/status')
+    const [url, request] = fetch.mock.calls[1]
+    expect(url).toBe('./api/coach')
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json' })
+    expect(JSON.parse(request.body)).toEqual(prompt)
+  })
+
+  it('keeps the local coach when availability is false or the server is missing', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ available: false }))
+      .mockResolvedValueOnce(new Response('static host', { status: 404 }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await builtInCoachAvailable()).toBe(false)
+    expect(await builtInCoachAvailable()).toBe(false)
+  })
+
+  it('returns no generated reply on API and network errors, leaving rule-based text visible', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ error: 'Built-in coach unavailable.' }, { status: 502 }))
+      .mockRejectedValueOnce(new TypeError('Network unavailable'))
+    vi.stubGlobal('fetch', fetch)
+    await expect(requestCoach(builtInCoach, movePrompt(facts))).resolves.toBeUndefined()
+    await expect(requestCoach(builtInCoach, movePrompt(facts))).resolves.toBeUndefined()
   })
 })
