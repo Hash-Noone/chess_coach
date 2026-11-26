@@ -38,7 +38,7 @@ npm run build
 npm start
 ```
 
-`npm start` serves `dist/` and the coach API on the same origin (default `0.0.0.0:5173`; override with `HOST` and `PORT`). Set `GEMINI_MODEL` to override `gemini-2.5-flash`. The coach endpoint requires the app's origin; behind an HTTPS reverse proxy, set `COACH_ORIGIN` to the browser-facing origin (for example, `https://coach.example`).
+`npm start` serves `dist/` and the coach API on the same origin (default `0.0.0.0:5173`; override with `HOST` and `PORT`). Set `GEMINI_MODEL` to override `gemini-3.1-flash-lite`. The coach endpoint requires the app's origin; behind an HTTPS reverse proxy, set `COACH_ORIGIN` to the browser-facing origin (for example, `https://coach.example`).
 
 Requests are capped at 32 KiB, prompt text at 16 KiB, and replies at 450 model tokens. The server allows 15 requests per minute per connection IP and 100 upstream requests per UTC day across all clients; set `COACH_MAX_REQUESTS_PER_DAY` to override the daily cap. Limits are per process, reset when the process restarts, and do not replace provider-side quota controls. Clients behind a reverse proxy share its IP limit. Upstream requests time out after 15 seconds.
 

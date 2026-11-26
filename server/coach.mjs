@@ -25,7 +25,7 @@ async function readPrompt(req) {
 
 export function createCoachHandler({
   apiKey = process.env.GEMINI_API_KEY?.trim() || '',
-  model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
+  model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite',
   fetchUpstream = globalThis.fetch,
   timeoutMs = 15_000,
   publicOrigin = process.env.COACH_ORIGIN?.trim(),
