@@ -45,13 +45,15 @@ export function AskCoach({ connection, fen, evaluation, move, level }: {
   connection?: ActiveCoach; fen: string; evaluation?: Evaluation; move?: MoveFacts; level: CoachLevel
 }) {
   const [question, setQuestion] = useState('')
-  const [submitted, setSubmitted] = useState<Prompt>()
-  const reply = useCoachReply(connection, submitted)
+  const [submitted, setSubmitted] = useState<{ connection: ActiveCoach; prompt: Prompt }>()
+  const currentSubmission = submitted?.connection === connection ? submitted : undefined
+  if (submitted && !currentSubmission) setSubmitted(undefined)
+  const reply = useCoachReply(currentSubmission?.connection, currentSubmission?.prompt)
 
   function ask(event: FormEvent) {
     event.preventDefault()
     if (!connection || !question.trim()) return
-    setSubmitted(questionPrompt(question.trim(), fen, evaluation, move, level))
+    setSubmitted({ connection, prompt: questionPrompt(question.trim(), fen, evaluation, move, level) })
   }
 
   return <section className="panel section-pad">
