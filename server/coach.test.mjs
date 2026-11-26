@@ -17,8 +17,8 @@ async function withCoach(options, run) {
   try {
     await run({
       status: () => fetch(url + '/status'),
-      send: (body = prompt) => fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      send: (body = prompt, headers) => fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: new URL(url).origin, ...headers }, body: JSON.stringify(body),
       }),
     })
   } finally {
@@ -30,7 +30,7 @@ it('reports availability and sends grounded prompts with the key only in Gemini 
   const fetchUpstream = vi.fn().mockResolvedValue(geminiReply('Take the center.'))
   await withCoach({ apiKey: testKey, model: 'gemini-configured', fetchUpstream }, async ({ status, send }) => {
     expect(await (await status()).json()).toEqual({ available: true })
-    expect(await (await send()).json()).toEqual({ answer: 'Take the center.' })
+    expect(await (await send({ ...prompt, generationConfig: { maxOutputTokens: 100_000 } })).json()).toEqual({ answer: 'Take the center.' })
     expect(fetchUpstream).toHaveBeenCalledOnce()
     const [url, request] = fetchUpstream.mock.calls[0]
     expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-configured:generateContent')
@@ -71,10 +71,34 @@ it('rejects oversized bodies and caps upstream requests per client', async () =>
   const fetchUpstream = vi.fn(() => geminiReply('Take the center.'))
   await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
     expect((await send({ ...prompt, user: 'x'.repeat(33 * 1024) })).status).toBe(413)
+    expect((await send({ ...prompt, user: 'é'.repeat(9 * 1024) })).status).toBe(413)
     expect(fetchUpstream).not.toHaveBeenCalled()
-    for (let i = 0; i < 14; i++) expect((await send()).status).toBe(200)
+    for (let i = 0; i < 13; i++) expect((await send()).status).toBe(200)
     expect((await send()).status).toBe(429)
-    expect(fetchUpstream).toHaveBeenCalledTimes(14)
+    expect(fetchUpstream).toHaveBeenCalledTimes(13)
+  })
+})
+
+it('rejects missing and cross-site origins, including under a configured HTTPS origin', async () => {
+  const fetchUpstream = vi.fn(() => geminiReply('Take the center.'))
+  const publicOrigin = 'https://coach.example'
+  await withCoach({ apiKey: testKey, publicOrigin, fetchUpstream }, async ({ send }) => {
+    expect((await send()).status).toBe(403)
+    expect((await send(prompt, { Origin: '' })).status).toBe(403)
+    expect((await send(prompt, { Origin: publicOrigin, 'Sec-Fetch-Site': 'cross-site' })).status).toBe(403)
+    expect(fetchUpstream).not.toHaveBeenCalled()
+    expect((await send(prompt, { Origin: publicOrigin, 'Sec-Fetch-Site': 'same-origin' })).status).toBe(200)
+  })
+})
+
+it('shares the daily quota across requests and counts failed upstream attempts', async () => {
+  const fetchUpstream = vi.fn(() => new Response(null, { status: 500 }))
+  await withCoach({ apiKey: testKey, dailyLimit: 1, fetchUpstream }, async ({ send }) => {
+    expect((await send()).status).toBe(502)
+    const response = await send()
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({ error: 'Daily coaching quota reached.' })
+    expect(fetchUpstream).toHaveBeenCalledOnce()
   })
 })
 
