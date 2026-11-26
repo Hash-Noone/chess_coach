@@ -54,6 +54,19 @@ it('does not call Gemini when no key is configured', async () => {
   })
 })
 
+it('defaults to Gemini 3.1 Flash-Lite when no model override is configured', async () => {
+  vi.stubEnv('GEMINI_MODEL', undefined)
+  try {
+    const fetchUpstream = vi.fn().mockResolvedValue(geminiReply('Take the center.'))
+    await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
+      expect((await send()).status).toBe(200)
+      expect(fetchUpstream.mock.calls[0][0]).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent')
+    })
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
 it('returns the same safe fallback on upstream errors and accidental credential echoes', async () => {
   const fetchUpstream = vi.fn()
     .mockResolvedValueOnce(new Response(testKey, { status: 401 }))
