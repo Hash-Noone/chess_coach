@@ -9,6 +9,25 @@ const rateWindowMs = 60_000
 const requestsPerWindow = 15
 const retryStatuses = new Set([429, 500, 502, 503, 504])
 const retryDelays = [200, 400]
+const geminiStatuses = new Set(['INVALID_ARGUMENT', 'FAILED_PRECONDITION', 'PERMISSION_DENIED', 'UNAUTHENTICATED', 'NOT_FOUND', 'RESOURCE_EXHAUSTED', 'INTERNAL', 'UNAVAILABLE', 'DEADLINE_EXCEEDED', 'CANCELLED', 'UNKNOWN'])
+const finishReasons = new Set(['STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION', 'LANGUAGE', 'OTHER', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'MALFORMED_FUNCTION_CALL', 'UNEXPECTED_TOOL_CALL', 'TOO_MANY_TOOL_CALLS'])
+const blockReasons = new Set(['SAFETY', 'OTHER', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'IMAGE_SAFETY', 'JAILBREAK'])
+const networkCodes = new Set(['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ENOTFOUND', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'])
+const errorNames = new Set(['Error', 'TypeError', 'SyntaxError', 'AbortError', 'TimeoutError', 'AggregateError'])
+
+function known(value, values) {
+  return typeof value !== 'string' ? undefined : values.has(value) ? value : 'OTHER'
+}
+
+function geminiMessageCategory(message) {
+  if (typeof message !== 'string') return
+  if (/quota|rate limit/i.test(message)) return 'quota or rate limit'
+  if (/overloaded|high demand|capacity/i.test(message)) return 'provider capacity'
+  if (/api key|credential/i.test(message)) return 'API credential error'
+  if (/deadline|timed? out|timeout/i.test(message)) return 'provider timeout'
+  if (/not found|not supported/i.test(message)) return 'resource not found or unsupported'
+  return 'details withheld'
+}
 
 function retryAfterMs(value) {
   const header = value?.trim()
@@ -43,6 +62,7 @@ export function createCoachHandler({
   dailyLimit = Number(process.env.COACH_MAX_REQUESTS_PER_DAY),
 } = {}) {
   const expectedOrigin = publicOrigin && new URL(publicOrigin).origin
+  const loggedModel = /^gemini-[a-z0-9.-]+$/i.test(model) && !model.includes(apiKey) ? model : '(custom model)'
   const maxDailyRequests = Number.isSafeInteger(dailyLimit) && dailyLimit > 0 ? dailyLimit : defaultDailyLimit
   const requests = new Map()
   let resetAt = 0
@@ -110,7 +130,8 @@ export function createCoachHandler({
     const disconnect = () => controller.abort()
     res.once('close', disconnect)
     try {
-      const deadline = performance.now() + timeoutMs
+      const started = performance.now()
+      const deadline = started + timeoutMs
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
       const request = {
@@ -127,22 +148,41 @@ export function createCoachHandler({
         signal,
         redirect: 'error',
       }
-      let data
       let retryAfter = 0
+      const logFailure = (attempt, start, fields) => {
+        console.warn('[Gemini coach] ' + JSON.stringify({
+          attempt: attempt + 1,
+          model: loggedModel,
+          elapsedMs: Math.round(performance.now() - start),
+          ...fields,
+        }))
+      }
+      const errorFields = error => ({
+        errorName: known(error?.name, errorNames),
+        networkCode: known(error?.cause?.code ?? error?.code, networkCodes),
+        abortReason: signal.aborted ? controller.signal.aborted ? 'client disconnected' : 'coach deadline exceeded' : undefined,
+      })
       for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
         if (attempt > 0) {
           const now = performance.now()
           const waitMs = Math.ceil(Math.max(retryDelays[attempt - 1], retryAfter - now))
           if (retryAfter && now + waitMs >= deadline) break
-          await delay(waitMs, undefined, { signal })
+          try {
+            await delay(waitMs, undefined, { signal })
+          } catch (error) {
+            logFailure(attempt - 1, started, { failure: 'retry wait aborted', ...errorFields(error) })
+            throw error
+          }
           retryAfter = 0
           signal.throwIfAborted()
           if (!takeDailyRequest()) break
         }
+        const start = performance.now()
         let response
         try {
           response = await fetchUpstream(url, request)
-        } catch {
+        } catch (error) {
+          logFailure(attempt, start, { failure: 'transport', ...errorFields(error) })
           signal.throwIfAborted()
           continue
         }
@@ -150,24 +190,53 @@ export function createCoachHandler({
           if (response.status === 429) {
             retryAfter = performance.now() + retryAfterMs(response.headers.get('Retry-After'))
           }
-          await response.body?.cancel()
+          let error
+          let readError
+          try {
+            error = (await response.json())?.error
+          } catch (reason) {
+            readError = reason
+          }
+          logFailure(attempt, start, {
+            failure: 'http',
+            httpStatus: response.status,
+            geminiCode: Number.isInteger(error?.code) && error.code >= 100 && error.code < 600 ? error.code : undefined,
+            geminiStatus: known(error?.status, geminiStatuses),
+            geminiMessageCategory: geminiMessageCategory(error?.message),
+            ...(readError ? errorFields(readError) : {}),
+          })
+          signal.throwIfAborted()
           if (!retryStatuses.has(response.status)) break
           continue
         }
+        let data
         try {
           data = await response.json()
-          break
         } catch (error) {
+          logFailure(attempt, start, { failure: 'response parse', httpStatus: response.status, ...errorFields(error) })
           if (!(error instanceof TypeError)) throw error
           signal.throwIfAborted()
+          continue
         }
+        const candidate = data?.candidates?.[0]
+        const parts = candidate?.content?.parts
+        const answer = Array.isArray(parts) ? parts
+          .filter(part => !part?.thought && typeof part?.text === 'string')
+          .map(part => part.text).join('\n').trim() : ''
+        if (!answer || answer.includes(apiKey)) {
+          logFailure(attempt, start, {
+            failure: answer ? 'credential echo' : 'no answer',
+            httpStatus: response.status,
+            finishReason: known(candidate?.finishReason, finishReasons),
+            blockReason: known(data?.promptFeedback?.blockReason, blockReasons),
+            thoughtTokens: Number.isSafeInteger(data?.usageMetadata?.thoughtsTokenCount) ? data.usageMetadata.thoughtsTokenCount : undefined,
+          })
+          break
+        }
+        if (!res.destroyed) json(res, 200, { answer })
+        return
       }
-      const parts = data?.candidates?.[0]?.content?.parts
-      const answer = Array.isArray(parts) ? parts
-        .filter(part => !part?.thought && typeof part?.text === 'string')
-        .map(part => part.text).join('\n').trim() : ''
-      if (!answer || answer.includes(apiKey)) throw new Error()
-      if (!res.destroyed) json(res, 200, { answer })
+      if (!res.destroyed) json(res, 502, { error: 'Built-in coach unavailable.' })
     } catch {
       if (!res.destroyed) json(res, 502, { error: 'Built-in coach unavailable.' })
     } finally {

@@ -81,6 +81,35 @@ it('returns the same safe fallback on upstream errors and accidental credential 
   })
 })
 
+it('logs only safe metadata for Gemini failures, even when diagnostics echo sensitive input', async () => {
+  const sensitiveText = `${testKey} | ${prompt.system} | ${prompt.user}`
+  const error = new TypeError(sensitiveText, { cause: { code: 'ECONNRESET' } })
+  const fetchUpstream = vi.fn()
+    .mockRejectedValueOnce(error)
+    .mockResolvedValueOnce(Response.json({ error: { code: 401, status: 'UNAUTHENTICATED', message: `Invalid API key: ${sensitiveText}` } }, { status: 401 }))
+    .mockResolvedValueOnce(Response.json({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ thought: true, text: sensitiveText }] } }], usageMetadata: { thoughtsTokenCount: 450 } }))
+    .mockResolvedValueOnce(Response.json({ promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: sensitiveText } }))
+    .mockResolvedValueOnce(new Response(sensitiveText))
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    await withCoach({ apiKey: testKey, model: 'gemini-test', fetchUpstream }, async ({ send }) => {
+      for (let index = 0; index < 4; index++) expect((await send()).status).toBe(502)
+    })
+    const raw = warn.mock.calls.flat().join('\n')
+    for (const secret of [testKey, prompt.system, prompt.user]) expect(raw).not.toContain(secret)
+    const logs = warn.mock.calls.map(([line]) => JSON.parse(line.slice('[Gemini coach] '.length)))
+    expect(logs).toMatchObject([
+      { attempt: 1, model: 'gemini-test', elapsedMs: expect.any(Number), failure: 'transport', errorName: 'TypeError', networkCode: 'ECONNRESET' },
+      { attempt: 2, failure: 'http', httpStatus: 401, geminiCode: 401, geminiStatus: 'UNAUTHENTICATED', geminiMessageCategory: 'API credential error' },
+      { attempt: 1, failure: 'no answer', httpStatus: 200, finishReason: 'MAX_TOKENS', thoughtTokens: 450 },
+      { attempt: 1, failure: 'no answer', httpStatus: 200, blockReason: 'SAFETY' },
+      { attempt: 1, failure: 'response parse', httpStatus: 200, errorName: 'SyntaxError' },
+    ])
+  } finally {
+    warn.mockRestore()
+  }
+})
+
 it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async status => {
   const fetchUpstream = vi.fn()
     .mockResolvedValueOnce(new Response('Retry response', { status }))
