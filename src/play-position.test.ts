@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { gameLabel } from './Board'
-import { matchResult } from './Play'
+import { matchResult, playBoardEvaluation } from './Play'
 import { readPlayPosition } from './play-position'
 
 it('awards a resignation to the opponent regardless of which side is to move', () => {
@@ -8,6 +8,17 @@ it('awards a resignation to the opponent regardless of which side is to move', (
   expect(matchResult(game, 'w', true)).toBe('0-1')
   expect(matchResult(game, 'b', true)).toBe('1-0')
   expect(matchResult(game, 'w', false)).toBe('*')
+})
+
+it('discards a previous position score when play ends but keeps a current score', () => {
+  const game = readPlayPosition('4k3/8/8/8/8/8/P7/4K3 w - - 0 1')
+  const previous = { fen: game.fen(), value: { cp: 85, pv: [] } }
+  game.move('a3')
+  const fen = game.fen()
+  const current = { fen, value: { cp: 91, pv: [] } }
+  expect(playBoardEvaluation(previous, fen, false)).toBe(previous)
+  expect(playBoardEvaluation(previous, fen, true)).toBeUndefined()
+  expect(playBoardEvaluation(current, fen, true)).toBe(current)
 })
 
 it('rejects malformed FEN and impossible check, castling, and en passant states', () => {
