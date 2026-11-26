@@ -4,12 +4,12 @@ import type { Evaluation } from './engine'
 import type { CoachLevel } from './coach'
 import { questionPrompt, requestCoach, type ActiveCoach, type MoveFacts, type Prompt } from './llm'
 
-export function useCoachReply(connection?: ActiveCoach, prompt?: Prompt) {
+export function useCoachReply(connection?: ActiveCoach, prompt?: Prompt, requestId?: number) {
   const system = prompt?.system
   const user = prompt?.user
-  const cacheKey = system && user ? JSON.stringify([system, user]) : undefined
+  const cacheKey = system && user ? JSON.stringify([system, user, requestId]) : undefined
   const cache = useRef<{ connection?: ActiveCoach; answers: Map<string, string> }>({ answers: new Map() })
-  const [reply, setReply] = useState<{ connection: ActiveCoach; user: string; fallback?: boolean; error?: string }>()
+  const [reply, setReply] = useState<{ connection: ActiveCoach; user: string; answer?: string; fallback?: boolean; error?: string }>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     if (cache.current.connection !== connection) cache.current = { connection, answers: new Map() }
@@ -17,18 +17,19 @@ export function useCoachReply(connection?: ActiveCoach, prompt?: Prompt) {
     const controller = new AbortController()
     void requestCoach(connection, { system, user }, controller.signal).then(answer => {
       if (!controller.signal.aborted) {
-        if (answer) cache.current.answers.set(cacheKey, answer)
-        setReply({ connection, user: cacheKey, fallback: !answer })
+        if (answer && requestId === undefined) cache.current.answers.set(cacheKey, answer)
+        setReply({ connection, user: cacheKey, answer, fallback: !answer })
       }
     }).catch(error => {
       if (!controller.signal.aborted) setReply({ connection, user: cacheKey, error: (error as Error).message })
     })
     return () => controller.abort()
-  }, [connection, system, user, cacheKey, attempt])
+  }, [connection, system, user, cacheKey, attempt, requestId])
 
   if (!connection || !cacheKey) return
   const current = reply?.connection === connection && reply.user === cacheKey ? reply : undefined
-  return { answer: cache.current.connection === connection ? cache.current.answers.get(cacheKey) : undefined, error: current?.error, fallback: current?.fallback,
+  const cached = cache.current.connection === connection ? cache.current.answers.get(cacheKey) : undefined
+  return { answer: current?.answer ?? cached, error: current?.error, fallback: current?.fallback,
     retry: () => { setReply(undefined); setAttempt(value => value + 1) } }
 }
 
@@ -45,15 +46,16 @@ export function AskCoach({ connection, fen, evaluation, move, level }: {
   connection?: ActiveCoach; fen: string; evaluation?: Evaluation; move?: MoveFacts; level: CoachLevel
 }) {
   const [question, setQuestion] = useState('')
-  const [submitted, setSubmitted] = useState<{ connection: ActiveCoach; prompt: Prompt }>()
+  const [submitted, setSubmitted] = useState<{ connection: ActiveCoach; prompt: Prompt; id: number }>()
   const currentSubmission = submitted?.connection === connection ? submitted : undefined
   if (submitted && !currentSubmission) setSubmitted(undefined)
-  const reply = useCoachReply(currentSubmission?.connection, currentSubmission?.prompt)
+  const reply = useCoachReply(currentSubmission?.connection, currentSubmission?.prompt, currentSubmission?.id)
 
   function ask(event: FormEvent) {
     event.preventDefault()
     if (!connection || !question.trim()) return
-    setSubmitted({ connection, prompt: questionPrompt(question.trim(), fen, evaluation, move, level) })
+    const prompt = questionPrompt(question.trim(), fen, evaluation, move, level)
+    setSubmitted(previous => ({ connection, prompt, id: (previous?.id ?? 0) + 1 }))
   }
 
   return <section className="panel section-pad">
@@ -66,6 +68,7 @@ export function AskCoach({ connection, fen, evaluation, move, level }: {
     {reply?.fallback && <div className="coach-reply" aria-live="polite">
       <strong>Rule-based coach</strong>
       <p>{move?.ruleBasedFinding ?? 'Run analysis and select a move to see what changed and what Stockfish recommends.'}</p>
+      <button type="button" className="link-button" onClick={reply.retry}>Retry question</button>
     </div>}
     <GeneratedCoachText reply={reply} title="Coach answer" />
   </section>
