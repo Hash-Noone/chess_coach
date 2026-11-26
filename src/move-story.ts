@@ -55,7 +55,7 @@ export function moveStory(move: Move, review?: Review, before?: Evaluation, afte
     if (['Inaccuracy', 'Mistake', 'Blunder'].includes(review.quality)) {
       const reply = boardMove(move.after, after.bestMove)
       if (reply) steps.push({ title: 'The opponent’s strongest reply',
-        text: `${notationMeaning(reply)}. This is the engine’s continuation, not a move from the recorded game.`,
+        text: `${notationMeaning(reply)}. This previews the engine’s strongest reply; it may also be the move played in the game.`,
         fen: reply.after, tone: 'warning', arrows: [{ from: reply.from, to: reply.to }], squares: [reply.to], highlight: reply })
       const best = boardMove(move.before, review.bestMove)
       if (best && best.lan !== move.lan) {

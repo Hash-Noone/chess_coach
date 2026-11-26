@@ -45,6 +45,19 @@ describe('board-linked move explanations', () => {
     expect(check.find(step => step.title === 'Check on the king')?.text).toContain('must escape')
   })
 
+  it('does not falsely say the actual recorded reply was hypothetical', () => {
+    const game = new Chess()
+    game.move('f3'); game.move('e5')
+    const move = game.move('g4')
+    const before = { cp: -61, bestMove: 'e2e4', pv: ['e2e4'] }
+    const after = { cp: -10000, mate: -1, bestMove: 'd8h4', pv: ['d8h4'] }
+    const recordedReply = game.move('Qh4#')
+    const reply = moveStory(move, reviewMove(move, before, after), before, after).find(step => step.title.includes('strongest reply'))!
+    expect(reply.fen).toBe(recordedReply.after)
+    expect(reply.text).toContain('may also be the move played in the game')
+    expect(reply.text).not.toContain('not a move from the recorded game')
+  })
+
   it('uses the real board for forks and discovered attacks', () => {
     const fork = new Chess('r1bqk2r/ppp2ppp/2np4/4p3/2B1P1n1/2NPPN2/PPP3PP/R2Q1RK1 b kq - 4 8').move('Nxe3')
     const arrows = moveStory(fork).find(step => step.title.includes('fork'))!.arrows
