@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises'
+
 const maxBodyBytes = 32 * 1024
 const maxPromptBytes = 16 * 1024
 const maxOutputTokens = 450
@@ -5,6 +7,15 @@ const dayMs = 86_400_000
 const defaultDailyLimit = 100
 const rateWindowMs = 60_000
 const requestsPerWindow = 15
+const retryStatuses = new Set([429, 500, 502, 503, 504])
+const retryDelays = [200, 400]
+
+function retryAfterMs(value) {
+  const header = value?.trim()
+  if (!header) return 0
+  if (/^\d+$/.test(header)) return Number(header) * 1000
+  return Math.max(0, Date.parse(header) - Date.now()) || 0
+}
 
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
@@ -37,6 +48,18 @@ export function createCoachHandler({
   let resetAt = 0
   let quotaDay = -1
   let dailyRequests = 0
+
+  function takeDailyRequest() {
+    const day = Math.floor(Date.now() / dayMs)
+    if (day !== quotaDay) {
+      quotaDay = day
+      dailyRequests = 0
+    }
+    if (dailyRequests >= maxDailyRequests) return false
+    dailyRequests++
+    return true
+  }
+
   return async function coach(req, res, next) {
     const path = req.url?.split('?')[0]
     if (path !== '/api/coach' && path !== '/api/coach/status') return next()
@@ -81,19 +104,16 @@ export function createCoachHandler({
       return json(res, 413, { error: 'Coaching prompt is too large.' })
     }
 
-    const day = Math.floor(Date.now() / dayMs)
-    if (day !== quotaDay) {
-      quotaDay = day
-      dailyRequests = 0
-    }
-    if (dailyRequests >= maxDailyRequests) return json(res, 429, { error: 'Daily coaching quota reached.' })
-    dailyRequests++
+    if (!takeDailyRequest()) return json(res, 429, { error: 'Daily coaching quota reached.' })
 
     const controller = new AbortController()
     const disconnect = () => controller.abort()
     res.once('close', disconnect)
     try {
-      const response = await fetchUpstream(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      const deadline = performance.now() + timeoutMs
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+      const request = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
@@ -104,14 +124,44 @@ export function createCoachHandler({
             ...(model === 'gemini-2.5-flash' ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
           },
         }),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]),
+        signal,
         redirect: 'error',
-      })
-      if (!response.ok) {
-        await response.body?.cancel()
-        throw new Error()
       }
-      const data = await response.json()
+      let data
+      let retryAfter = 0
+      for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+        if (attempt > 0) {
+          const now = performance.now()
+          const waitMs = Math.ceil(Math.max(retryDelays[attempt - 1], retryAfter - now))
+          if (retryAfter && now + waitMs >= deadline) break
+          await delay(waitMs, undefined, { signal })
+          retryAfter = 0
+          signal.throwIfAborted()
+          if (!takeDailyRequest()) break
+        }
+        let response
+        try {
+          response = await fetchUpstream(url, request)
+        } catch {
+          signal.throwIfAborted()
+          continue
+        }
+        if (!response.ok) {
+          if (response.status === 429) {
+            retryAfter = performance.now() + retryAfterMs(response.headers.get('Retry-After'))
+          }
+          await response.body?.cancel()
+          if (!retryStatuses.has(response.status)) break
+          continue
+        }
+        try {
+          data = await response.json()
+          break
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error
+          signal.throwIfAborted()
+        }
+      }
       const parts = data?.candidates?.[0]?.content?.parts
       const answer = Array.isArray(parts) ? parts
         .filter(part => !part?.thought && typeof part?.text === 'string')
