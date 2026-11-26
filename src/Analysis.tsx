@@ -198,7 +198,7 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
           </> : <p className="muted">{ply === 0 ? 'Select a move to see the coach’s explanation.' : 'Run analysis to get feedback on this move.'}</p>}
         </div>
       </section>
-      <AskCoach key={displayedFen + level} connection={connection} fen={displayedFen} evaluation={displayedEvaluation} move={variationMove || (story && story.fen !== current?.after) ? undefined : facts} level={level} />
+      <AskCoach key={fen + level} connection={connection} fen={displayedFen} evaluation={displayedEvaluation} move={variationMove || (story && story.fen !== current?.after) ? undefined : facts} level={level} />
     </aside>
   </div>
 }
