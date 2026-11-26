@@ -6,13 +6,17 @@ export type SavedGame = {
   black: string
   result: string
   pgn: string
-  source: 'library' | 'lichess' | 'pgn' | 'engine'
+  source: 'library' | 'lichess' | 'chesscom' | 'pgn' | 'engine'
   opening?: string
   date?: string
   url?: string
 }
 
 const storageKey = 'chess-coach-games-v1'
+const recentGameCount = 20
+
+export const gameSites = { lichess: 'Lichess', chesscom: 'Chess.com' } as const
+export type GameSite = keyof typeof gameSites
 
 function illegalPgnMove(game: Chess, move: string) {
   return new Error(`Move ${game.moveNumber()} for ${game.turn() === 'w' ? 'White' : 'Black'}, “${move}”, isn’t a legal move.`)
@@ -125,7 +129,7 @@ function fromLichess(item: LichessGame): SavedGame | undefined {
 export async function fetchLichessGames(username: string, signal?: AbortSignal) {
   const user = username.trim()
   if (!/^[a-z0-9_-]{2,30}$/i.test(user)) throw new Error('Enter a valid Lichess username.')
-  const query = new URLSearchParams({ max: '20', pgnInJson: 'true', opening: 'true', variant: 'standard' })
+  const query = new URLSearchParams({ max: String(recentGameCount), pgnInJson: 'true', opening: 'true', variant: 'standard' })
   const response = await fetch(`https://lichess.org/api/games/user/${encodeURIComponent(user)}?${query}`, {
     headers: { Accept: 'application/x-ndjson' }, signal,
   })
@@ -147,4 +151,46 @@ export async function fetchLichessGames(username: string, signal?: AbortSignal) 
     if (game) games.push(game)
   }
   return { games, latestOnly: false }
+}
+
+type ChessComGame = { url?: string; pgn?: string; rules?: string; end_time?: number }
+
+function fromChessCom(item: ChessComGame): SavedGame | undefined {
+  if (!item.pgn || !item.url || (item.rules && item.rules !== 'chess')) return
+  const link = /^https:\/\/(?:www\.)?chess\.com\/game\/(daily|live)\/(\d+)\/?$/.exec(item.url)
+  if (!link) return
+  try {
+    const game = savePgn(item.pgn, 'chesscom')
+    return {
+      ...game, id: `chesscom-${link[1]}-${link[2]}`, url: item.url,
+      date: item.end_time ? new Date(item.end_time * 1000).toISOString().slice(0, 10) : game.date,
+    }
+  } catch {
+    return
+  }
+}
+
+export async function fetchChessComGames(username: string, signal?: AbortSignal) {
+  const user = username.trim().toLowerCase()
+  if (!/^[a-z0-9_-]{2,30}$/.test(user)) throw new Error('Enter a valid Chess.com username.')
+  const base = `https://api.chess.com/pub/player/${encodeURIComponent(user)}/games/`
+  async function request(url: string) {
+    const response = await fetch(url, { signal })
+    if (response.status === 404 && url === base + 'archives') throw new Error('Chess.com player not found. Check the username and try again.')
+    if (response.status === 429) throw new Error('Chess.com is rate limiting requests. Wait a minute before trying again.')
+    if (!response.ok) throw new Error('Chess.com could not export games right now. Try again or paste a PGN.')
+    return response.json()
+  }
+
+  const { archives }: { archives: string[] } = await request(base + 'archives')
+  const games = new Map<string, SavedGame>()
+  for (const archive of archives.filter(url => url.startsWith(base) && /^\d{4}\/(0[1-9]|1[0-2])$/.test(url.slice(base.length))).sort().reverse()) {
+    const month: { games: ChessComGame[] } = await request(archive)
+    for (const item of month.games.sort((a, b) => (b.end_time ?? 0) - (a.end_time ?? 0))) {
+      const game = fromChessCom(item)
+      if (game && !games.has(game.id)) games.set(game.id, game)
+      if (games.size === recentGameCount) return [...games.values()]
+    }
+  }
+  return [...games.values()]
 }
