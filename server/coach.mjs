@@ -182,7 +182,7 @@ export function createCoachHandler({
           ...fields,
         }))
       }
-    const errorFields = (error, attemptSignal = signal, bodySignal = attemptSignal) => ({
+      const errorFields = (error, attemptSignal = signal, bodySignal = attemptSignal) => ({
         errorName: known(error?.name, errorNames),
         networkCode: known(error?.cause?.code ?? error?.code, networkCodes),
         abortReason: controller.signal.aborted ? 'client disconnected'
@@ -194,10 +194,13 @@ export function createCoachHandler({
       for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
         if (attempt > 0) {
           const now = performance.now()
-          const waitMs = Math.ceil(Math.max(retryDelays[attempt - 1], retryAfter - now))
-          if (retryAfter && now + waitMs >= deadline) break
+          const retryAt = Math.max(now + retryDelays[attempt - 1], retryAfter)
+          if (retryAfter && retryAt >= deadline) break
           try {
-            await delay(waitMs, undefined, { signal })
+            let remaining
+            while ((remaining = retryAt - performance.now()) > 0) {
+              await delay(Math.ceil(remaining), undefined, { signal })
+            }
           } catch (error) {
             logFailure(attempt - 1, started, { failure: 'retry wait aborted', ...errorFields(error) })
             throw error
@@ -220,7 +223,8 @@ export function createCoachHandler({
         }
         if (!response.ok) {
           if (response.status === 429) {
-            retryAfter = performance.now() + retryAfterMs(response.headers.get('Retry-After'))
+            const cooldown = retryAfterMs(response.headers.get('Retry-After'))
+            retryAfter = performance.now() + cooldown
           }
           let error
           let readError
