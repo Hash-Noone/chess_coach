@@ -4,6 +4,8 @@ import { coordinateMove, type Evaluation } from './engine'
 
 export type CoachSettings = { provider: 'openai' | 'anthropic'; baseUrl: string; model: string }
 export type CoachConnection = CoachSettings & { apiKey: string }
+export const builtInCoach = { provider: 'built-in' } as const
+export type ActiveCoach = CoachConnection | typeof builtInCoach
 export type MoveFacts = ReturnType<typeof moveFacts>
 export type Prompt = { system: string; user: string }
 
@@ -100,7 +102,28 @@ export function questionPrompt(question: string, fen: string, score?: Evaluation
   }
 }
 
-export async function requestCoach(connection: CoachConnection, prompt: Prompt, signal?: AbortSignal) {
+export async function builtInCoachAvailable(signal?: AbortSignal) {
+  try {
+    const response = await fetch('./api/coach/status', { signal })
+    return response.ok && (await response.json()).available === true
+  } catch {
+    return false
+  }
+}
+
+export async function requestCoach(connection: ActiveCoach, prompt: Prompt, signal?: AbortSignal) {
+  if (connection.provider === 'built-in') {
+    try {
+      const response = await fetch('./api/coach', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prompt), signal, redirect: 'error',
+      })
+      if (!response.ok) return
+      const { answer } = await response.json()
+      if (typeof answer === 'string' && answer.trim()) return answer.trim()
+    } catch { /* Keep the local coach when the built-in provider is unavailable. */ }
+    return
+  }
   const endpoint = providerUrl(connection)
   const model = connection.model.trim()
   if (!model || !connection.apiKey.trim()) throw new Error('Set a model and API key in Coach settings.')

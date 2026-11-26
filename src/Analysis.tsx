@@ -7,7 +7,7 @@ import { AskCoach, GeneratedCoachText, useCoachReply } from './CoachReplies'
 import { CoachSettingsPanel } from './CoachSettings'
 import { Stockfish, type EnginePhase, type Evaluation } from './engine'
 import { gameSites, readGame, type SavedGame } from './games'
-import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
+import { moveFacts, movePrompt, summaryPrompt, type ActiveCoach, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
 import { listenForReviewNavigation } from './review-navigation'
 
@@ -16,12 +16,14 @@ const depth = 12
 export type ReviewState = { selection: { ply: number }; showBest: boolean; reviews: Review[]; scores: Evaluation[] }
 export const initialReview: ReviewState = { selection: { ply: 0 }, showBest: false, reviews: [], scores: [] }
 
-export function Analysis({ active, selected, onLibrary, settings, connection, onConnect, onDisconnect, state, update, level, onLevel }: {
+export function Analysis({ active, selected, onLibrary, settings, connection, builtInAvailable, onToggleBuiltIn, onConnect, onDisconnect, state, update, level, onLevel }: {
   active: boolean
   selected: SavedGame
   onLibrary: () => void
   settings: CoachSettings
-  connection?: CoachConnection
+  connection?: ActiveCoach
+  builtInAvailable?: boolean
+  onToggleBuiltIn?: () => void
   onConnect: (connection: CoachConnection) => void
   onDisconnect: () => void
   state: ReviewState
@@ -171,7 +173,8 @@ export function Analysis({ active, selected, onLibrary, settings, connection, on
           <GeneratedCoachText reply={generatedSummary} title="LLM game recap" />
         </div>}
       </section>
-      <CoachSettingsPanel settings={settings} connection={connection} onSave={onConnect} onDisconnect={onDisconnect} />
+      <CoachSettingsPanel settings={settings} connection={connection} builtInAvailable={builtInAvailable}
+        onToggleBuiltIn={onToggleBuiltIn} onSave={onConnect} onDisconnect={onDisconnect} />
       <section className="panel section-pad">
         <div className="section-heading"><ListOrdered size={18} /><h3>Move breakdown</h3><span className="badge subtle" title="Each player’s turn counts as one move.">{moves.length} moves</span></div>
         <MoveTable moves={moves} selection={selection} onSelect={go} ratings={reviews.map(item => item.quality)} />

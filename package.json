@@ -6,6 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/prepare-engine.mjs",
     "dev": "vite",
+    "start": "node server/index.mjs",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview"

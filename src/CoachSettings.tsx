@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { KeyRound } from 'lucide-react'
-import { providerUrl, type CoachConnection, type CoachSettings } from './llm'
+import { providerUrl, type ActiveCoach, type CoachConnection, type CoachSettings } from './llm'
 
-export function CoachSettingsPanel({ settings, connection, onSave, onDisconnect }: {
+export function CoachSettingsPanel({ settings, connection, builtInAvailable, onToggleBuiltIn, onSave, onDisconnect }: {
   settings: CoachSettings
-  connection?: CoachConnection
+  connection?: ActiveCoach
+  builtInAvailable?: boolean
+  onToggleBuiltIn?: () => void
   onSave: (connection: CoachConnection) => void
   onDisconnect: () => void
 }) {
@@ -12,6 +14,8 @@ export function CoachSettingsPanel({ settings, connection, onSave, onDisconnect 
   const [apiKey, setApiKey] = useState('')
   const [notice, setNotice] = useState('')
   const [failed, setFailed] = useState(false)
+  const isBuiltIn = connection?.provider === 'built-in'
+  const isCustom = !!connection && !isBuiltIn
 
   function save(event: FormEvent) {
     event.preventDefault()
@@ -29,8 +33,14 @@ export function CoachSettingsPanel({ settings, connection, onSave, onDisconnect 
   }
 
   return <details className="panel section-pad coach-settings">
-    <summary><KeyRound size={16} /> Coach settings <span className="badge subtle">{connection ? 'LLM enabled' : 'Rule-based'}</span></summary>
-    <p className="muted">Connect a provider for generated explanations and questions. After enabling, the app sends relevant positions and analysis to that provider. Requests may incur provider charges. The key stays in this tab’s memory and is erased on reload; only your provider settings are saved.</p>
+    <summary><KeyRound size={16} /> Coach settings <span className="badge subtle">{isBuiltIn ? 'Built-in Gemini' : isCustom ? 'Custom LLM' : 'Rule-based'}</span></summary>
+    {builtInAvailable && <>
+      <p className="muted">Built-in Gemini sends relevant positions, analysis, and your questions to Google. The host’s API key never reaches your browser.</p>
+      {!isCustom && <button type="button" className="button secondary full" onClick={onToggleBuiltIn}>
+        {isBuiltIn ? 'Use rule-based coach' : 'Use built-in Gemini'}
+      </button>}
+    </>}
+    <p className="muted">You can also connect your own provider. It receives the same chess information, and requests may incur charges. Your API key stays in this tab’s memory and is erased on reload; only your provider settings are saved.</p>
     <form onSubmit={save}>
       <label className="field-label" htmlFor="coach-provider">Provider</label>
       <select id="coach-provider" value={draft.provider} onChange={event => {
@@ -48,9 +58,9 @@ export function CoachSettingsPanel({ settings, connection, onSave, onDisconnect 
       <input id="coach-model" value={draft.model} onChange={event => setDraft({ ...draft, model: event.target.value })} required />
       <label className="field-label" htmlFor="coach-key">API key</label>
       <input id="coach-key" type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={event => setApiKey(event.target.value)} required />
-      <button className="button primary full">Enable LLM coach</button>
-      {connection && <button type="button" className="button secondary full" onClick={() => {
-        onDisconnect(); setApiKey(''); setFailed(false); setNotice('LLM coach disabled.')
+      <button className="button primary full">Enable custom provider</button>
+      {isCustom && <button type="button" className="button secondary full" onClick={() => {
+        onDisconnect(); setApiKey(''); setFailed(false); setNotice('Custom provider disconnected.')
       }}>Disconnect</button>}
       {notice && <p className={`notice ${failed ? 'error' : ''}`} role="status">{notice}</p>}
     </form>
