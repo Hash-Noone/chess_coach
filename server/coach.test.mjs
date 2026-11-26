@@ -77,6 +77,52 @@ it('returns the same safe fallback on upstream errors and accidental credential 
       expect(response.status).toBe(502)
       expect(await response.json()).toEqual({ error: 'Built-in coach unavailable.' })
     }
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+  })
+})
+
+it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async status => {
+  const fetchUpstream = vi.fn()
+    .mockResolvedValueOnce(new Response('Retry response', { status }))
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
+    const response = await send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ answer: 'Take the center.' })
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+    expect(fetchUpstream.mock.calls[0][1].signal).toBe(fetchUpstream.mock.calls[1][1].signal)
+  })
+})
+
+it('retries network errors but stops after three attempts', async () => {
+  const fetchUpstream = vi.fn()
+    .mockRejectedValueOnce(new TypeError('network failure'))
+    .mockRejectedValueOnce(new TypeError('network failure again'))
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce(geminiReply('Must not use a fourth attempt.'))
+  await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
+    expect((await send()).status).toBe(502)
+    expect(fetchUpstream).toHaveBeenCalledTimes(3)
+  })
+})
+
+it('counts retries against the daily upstream budget', async () => {
+  const fetchUpstream = vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 502 }))
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, dailyLimit: 2 }, async ({ send }) => {
+    expect((await send()).status).toBe(200)
+    expect((await send()).status).toBe(429)
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('stops the retry backoff at the shared timeout', async () => {
+  const fetchUpstream = vi.fn(() => new Response(null, { status: 503 }))
+  await withCoach({ apiKey: testKey, fetchUpstream, timeoutMs: 50 }, async ({ send }) => {
+    expect((await send()).status).toBe(502)
+    expect(fetchUpstream).toHaveBeenCalledOnce()
+    expect(fetchUpstream.mock.calls[0][1].signal.aborted).toBe(true)
   })
 })
 
