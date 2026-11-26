@@ -81,6 +81,35 @@ it('returns the same safe fallback on upstream errors and accidental credential 
   })
 })
 
+it('logs only safe metadata for Gemini failures, even when diagnostics echo sensitive input', async () => {
+  const sensitiveText = `${testKey} | ${prompt.system} | ${prompt.user}`
+  const error = new TypeError(sensitiveText, { cause: { code: 'ECONNRESET' } })
+  const fetchUpstream = vi.fn()
+    .mockRejectedValueOnce(error)
+    .mockResolvedValueOnce(Response.json({ error: { code: 401, status: 'UNAUTHENTICATED', message: `Invalid API key: ${sensitiveText}` } }, { status: 401 }))
+    .mockResolvedValueOnce(Response.json({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ thought: true, text: sensitiveText }] } }], usageMetadata: { thoughtsTokenCount: 450 } }))
+    .mockResolvedValueOnce(Response.json({ promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: sensitiveText } }))
+    .mockResolvedValueOnce(new Response(sensitiveText))
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    await withCoach({ apiKey: testKey, model: 'gemini-test', fetchUpstream }, async ({ send }) => {
+      for (let index = 0; index < 4; index++) expect((await send()).status).toBe(502)
+    })
+    const raw = warn.mock.calls.flat().join('\n')
+    for (const secret of [testKey, prompt.system, prompt.user]) expect(raw).not.toContain(secret)
+    const logs = warn.mock.calls.map(([line]) => JSON.parse(line.slice('[Gemini coach] '.length)))
+    expect(logs).toMatchObject([
+      { attempt: 1, model: 'gemini-test', elapsedMs: expect.any(Number), failure: 'transport', errorName: 'TypeError', networkCode: 'ECONNRESET' },
+      { attempt: 2, failure: 'http', httpStatus: 401, geminiCode: 401, geminiStatus: 'UNAUTHENTICATED', geminiMessageCategory: 'API credential error' },
+      { attempt: 1, failure: 'no answer', httpStatus: 200, finishReason: 'MAX_TOKENS', thoughtTokens: 450 },
+      { attempt: 1, failure: 'no answer', httpStatus: 200, blockReason: 'SAFETY' },
+      { attempt: 1, failure: 'response parse', httpStatus: 200, errorName: 'SyntaxError' },
+    ])
+  } finally {
+    warn.mockRestore()
+  }
+})
+
 it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async status => {
   const fetchUpstream = vi.fn()
     .mockResolvedValueOnce(new Response('Retry response', { status }))
@@ -90,7 +119,7 @@ it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async sta
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ answer: 'Take the center.' })
     expect(fetchUpstream).toHaveBeenCalledTimes(2)
-    expect(fetchUpstream.mock.calls[0][1].signal).toBe(fetchUpstream.mock.calls[1][1].signal)
+    expect(fetchUpstream.mock.calls[0][1].signal).not.toBe(fetchUpstream.mock.calls[1][1].signal)
   })
 })
 
@@ -110,6 +139,22 @@ it.each([
   await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
     expect((await send()).status).toBe(200)
     expect(fetchUpstream).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('cancels stalled Gemini error bodies and succeeds on the third attempt', async () => {
+  const cancel = vi.fn(() => new Promise(() => {}))
+  const stalled = () => new Response(new ReadableStream({ cancel }), { status: 503 })
+  const fetchUpstream = vi.fn()
+    .mockResolvedValueOnce(stalled())
+    .mockResolvedValueOnce(stalled())
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, timeoutMs: 2000, errorBodyTimeoutMs: 20 }, async ({ send }) => {
+    const response = await send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ answer: 'Take the center.' })
+    expect(fetchUpstream).toHaveBeenCalledTimes(3)
+    expect(cancel).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -200,5 +245,21 @@ it('times out an upstream request without returning its diagnostic', async () =>
     const response = await send()
     expect(response.status).toBe(502)
     expect(await response.json()).toEqual({ error: 'Built-in coach unavailable.' })
+  })
+})
+
+it('retries a stalled Gemini attempt while there is time left in the shared deadline', async () => {
+  const fetchUpstream = vi.fn()
+    .mockImplementationOnce((_url, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    }))
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, timeoutMs: 1000, attemptTimeoutMs: 20 }, async ({ send }) => {
+    const response = await send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ answer: 'Take the center.' })
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+    expect(fetchUpstream.mock.calls[0][1].signal.reason?.name).toBe('TimeoutError')
+    expect(fetchUpstream.mock.calls[1][1].signal.aborted).toBe(false)
   })
 })
