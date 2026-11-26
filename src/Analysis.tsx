@@ -40,6 +40,7 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
   const [phase, setPhase] = useState<EnginePhase>('loading')
   const [error, setError] = useState('')
   const [variation, setVariation] = useState<Move[]>([])
+  const [navigationId, setNavigationId] = useState(0)
   const engineRef = useRef<Stockfish>(undefined)
   const boardRef = useRef<HTMLDivElement>(null)
   useEffect(() => () => { engineRef.current?.close(); engineRef.current = undefined }, [])
@@ -52,6 +53,7 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
   }
 
   function go(next: number) {
+    setNavigationId(value => value + 1)
     setVariation([])
     update(state => ({ ...state, selection: { ply: Math.min(moves.length, Math.max(0, next)) }, showBest: false }))
     revealBoard()
@@ -114,7 +116,7 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
   const generatedSummary = useCoachReply(connection, summary && scores.length === moves.length + 1
     ? summaryPrompt(summary, summary.keyMoments.map(moment => moveFacts(moment.move, moment, scores[moment.index], scores[moment.index + 1], level)), level)
     : undefined)
-  const { story, animate, controls } = useMoveExplanation({ id: `${ply}:${!!bestView}:${variation.length}:${!!review}`, active,
+  const { story, animate, controls } = useMoveExplanation({ id: `${navigationId}:${ply}:${!!bestView}:${variation.length}:${!!review}`, active,
     move: bestView || variationMove ? undefined : current, review, before: scores[ply - 1], after: scores[ply], level })
   const displayedFen = story?.fen ?? fen
   const displayedEvaluation = story ? story.evaluation : evaluation
