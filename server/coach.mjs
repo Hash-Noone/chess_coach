@@ -10,6 +10,13 @@ const requestsPerWindow = 15
 const retryStatuses = new Set([429, 500, 502, 503, 504])
 const retryDelays = [200, 400]
 
+function retryAfterMs(value) {
+  const header = value?.trim()
+  if (!header) return 0
+  if (/^\d+$/.test(header)) return Number(header) * 1000
+  return Math.max(0, Date.parse(header) - Date.now()) || 0
+}
+
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(value))
@@ -103,6 +110,7 @@ export function createCoachHandler({
     const disconnect = () => controller.abort()
     res.once('close', disconnect)
     try {
+      const deadline = performance.now() + timeoutMs
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
       const request = {
@@ -120,9 +128,14 @@ export function createCoachHandler({
         redirect: 'error',
       }
       let data
+      let retryAfter = 0
       for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
         if (attempt > 0) {
-          await delay(retryDelays[attempt - 1], undefined, { signal })
+          const now = performance.now()
+          const waitMs = Math.ceil(Math.max(retryDelays[attempt - 1], retryAfter - now))
+          if (retryAfter && now + waitMs >= deadline) break
+          await delay(waitMs, undefined, { signal })
+          retryAfter = 0
           signal.throwIfAborted()
           if (!takeDailyRequest()) break
         }
@@ -134,6 +147,9 @@ export function createCoachHandler({
           continue
         }
         if (!response.ok) {
+          if (response.status === 429) {
+            retryAfter = performance.now() + retryAfterMs(response.headers.get('Retry-After'))
+          }
           await response.body?.cancel()
           if (!retryStatuses.has(response.status)) break
           continue

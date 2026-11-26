@@ -94,6 +94,37 @@ it.each([429, 500, 502, 503, 504])('retries transient Gemini HTTP %i', async sta
   })
 })
 
+it.each([
+  ['seconds', () => '1', start => start + 1000],
+  ['HTTP date', () => new Date(Date.now() + 1500).toUTCString(), (_start, header) => Date.parse(header)],
+])('waits for Gemini Retry-After in %s before retrying a 429', async (_format, headerValue, notBefore) => {
+  let readyAt
+  const fetchUpstream = vi.fn()
+    .mockImplementationOnce(() => {
+      const start = Date.now()
+      const header = headerValue()
+      readyAt = notBefore(start, header)
+      return new Response(null, { status: 429, headers: { 'Retry-After': header } })
+    })
+    .mockImplementationOnce(() => Date.now() >= readyAt ? geminiReply('Take the center.') : new Response(null, { status: 400 }))
+  await withCoach({ apiKey: testKey, fetchUpstream }, async ({ send }) => {
+    expect((await send()).status).toBe(200)
+    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('skips a Retry-After beyond the deadline without spending a quota slot', async () => {
+  const fetchUpstream = vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': '60' } }))
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, dailyLimit: 2, timeoutMs: 2000 }, async ({ send }) => {
+    expect((await send()).status).toBe(502)
+    expect(fetchUpstream).toHaveBeenCalledOnce()
+    expect(fetchUpstream.mock.calls[0][1].signal.aborted).toBe(false)
+    expect((await send()).status).toBe(200)
+  })
+})
+
 it('retries network errors but stops after three attempts', async () => {
   const fetchUpstream = vi.fn()
     .mockRejectedValueOnce(new TypeError('network failure'))
