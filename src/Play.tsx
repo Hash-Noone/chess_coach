@@ -26,12 +26,18 @@ export function matchResult(game: Chess, human: Color, resigned: boolean) {
   return game.isDraw() ? '1/2-1/2' : '*'
 }
 
+type PositionEvaluation = { fen: string; value: Evaluation }
+
+export function playBoardEvaluation(evaluated: PositionEvaluation | undefined, fen: string, finished: boolean) {
+  return finished && evaluated?.fen !== fen ? undefined : evaluated
+}
+
 export function Play({ active, onReview }: { active: boolean; onReview: (game: SavedGame) => void }) {
   const [game, setGame] = useState(() => new Chess())
   const [human, setHuman] = useState<Color>('w')
   const [orientation, setOrientation] = useState<Color>('w')
   const [skill, setSkill] = useState(4)
-  const [evaluated, setEvaluated] = useState<{ fen: string; value: Evaluation }>()
+  const [evaluated, setEvaluated] = useState<PositionEvaluation>()
   const [error, setError] = useState('')
   const [phase, setPhase] = useState<EnginePhase>()
   const [retry, setRetry] = useState(0)
@@ -119,6 +125,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const engineOpeningMoves = moves.length && moves[0].color !== human ? 1 : 0
   const levelNames = ['Relaxed', 'Casual', 'Club', 'Strong', 'Expert', 'Maximum']
   const fen = game.fen()
+  const displayedEvaluation = playBoardEvaluation(evaluated, fen, finished)
 
   function review() {
     const copy = copyGame(game)
@@ -132,7 +139,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   return <div className="workspace">
     <div className="play-board-stack">
       <Board id="play-board" fen={fen} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
-        showTurn={!finished} evaluation={evaluated?.value} previousEvaluation={evaluated && evaluated.fen !== fen} highlight={lastMove}
+        showTurn={!finished} evaluation={displayedEvaluation?.value} previousEvaluation={displayedEvaluation && displayedEvaluation.fen !== fen} highlight={lastMove}
         canPlay={canPlay} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
       {active && <Opening fen={fen} onMove={canPlay ? uci => {
         const { from, to, promotion } = coordinateMove(uci)
