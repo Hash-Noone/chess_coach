@@ -16,12 +16,13 @@ type Props = {
   highlight?: Pick<Move, 'from' | 'to'>
   arrow?: string
   animate?: boolean
+  annotations?: { arrows: { from: Square; to: Square }[]; squares: Square[]; tone: 'move' | 'idea' | 'warning' | 'verdict' }
   canPlay?: boolean
   onMove?: (from: string, to: string, promotion?: string) => boolean
   onFlip: () => void
 }
 
-export function Board({ id, fen, orientation, bottomName, topName, showTurn, evaluation, highlight, arrow, animate = false, canPlay, onMove, onFlip }: Props) {
+export function Board({ id, fen, orientation, bottomName, topName, showTurn, evaluation, highlight, arrow, animate = false, annotations, canPlay, onMove, onFlip }: Props) {
   const [selected, setSelected] = useState<{ fen: string; square: Square }>()
   const [pending, setPending] = useState<{ fen: string; from: string; to: string }>()
   const board = new Chess(fen)
@@ -32,6 +33,10 @@ export function Board({ id, fen, orientation, bottomName, topName, showTurn, eva
   if (highlight) {
     squareStyles[highlight.from] = { backgroundColor: '#c1d67487' }
     squareStyles[highlight.to] = { backgroundColor: '#c1d674aa' }
+  }
+  const annotationColor = annotations?.tone === 'warning' ? '#ed987d' : annotations?.tone === 'idea' ? '#83cce0' : '#dfc477'
+  for (const square of annotations?.squares ?? []) {
+    squareStyles[square] = { ...squareStyles[square], boxShadow: `inset 0 0 0 4px ${annotationColor}` }
   }
   if (active) {
     squareStyles[active] = { backgroundColor: '#e8d173a8' }
@@ -72,9 +77,10 @@ export function Board({ id, fen, orientation, bottomName, topName, showTurn, eva
           id, position: fen, boardOrientation: orientation === 'w' ? 'white' : 'black',
           lightSquareStyle: { backgroundColor: '#dce3ce', color: '#455d49' },
           darkSquareStyle: { backgroundColor: '#68816a', color: '#edf0e4' },
-          squareStyles, showAnimations: animate, animationDurationInMs: 150, allowDragging: !!canPlay && !promotion,
+          squareStyles, showAnimations: animate, animationDurationInMs: annotations ? 450 : 150, allowDragging: !!canPlay && !promotion,
           allowDrawingArrows: false, clearArrowsOnClick: false, clearArrowsOnPositionChange: false,
-          arrows: arrow ? [{ startSquare: arrow.slice(0, 2), endSquare: arrow.slice(2, 4), color: '#dfad51' }] : [],
+          arrows: annotations ? annotations.arrows.map(({ from, to }) => ({ startSquare: from, endSquare: to, color: annotationColor }))
+            : arrow ? [{ startSquare: arrow.slice(0, 2), endSquare: arrow.slice(2, 4), color: '#dfad51' }] : [],
           canDragPiece: ({ piece }) => !!canPlay && piece.pieceType[0] === board.turn(),
           onPieceDrop: ({ sourceSquare, targetSquare }) => !!canPlay && !!targetSquare && attempt(sourceSquare, targetSquare),
           onSquareClick: ({ square }) => {

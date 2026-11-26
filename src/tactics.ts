@@ -3,6 +3,8 @@ import { Chess, SQUARES, type Move, type PieceSymbol, type Square } from 'chess.
 export type Tactic = {
   kind: 'fork' | 'pin' | 'skewer' | 'discovered attack' | 'queen attack' | 'hanging piece'
   description: string
+  arrows: { from: Square; to: Square }[]
+  squares: Square[]
 }
 
 const names: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' }
@@ -41,10 +43,12 @@ export function tacticsOf(move: Move): Tactic[] {
   const fork = targets.filter(piece => piece.type === 'k' || values[piece.type] > values[attacker.type] || !board.isAttacked(piece.square, enemy))
     .sort((a, b) => values[b.type] - values[a.type])
   if (fork.length > 1 && fork.some(isNew)) {
-    found.push({ kind: 'fork', description: `${pieceName} on ${move.to} forks ${fork.slice(0, 3).map(named).join(' and ')}: it attacks them at the same time.` })
+    found.push({ kind: 'fork', description: `${pieceName} on ${move.to} forks ${fork.slice(0, 3).map(named).join(' and ')}: it attacks them at the same time.`,
+      arrows: fork.slice(0, 3).map(piece => ({ from: move.to, to: piece.square })), squares: fork.slice(0, 3).map(piece => piece.square) })
   } else {
     const queen = targets.find(piece => piece.type === 'q' && isNew(piece))
-    if (queen) found.push({ kind: 'queen attack', description: `${pieceName} on ${move.to} attacks the ${opponent.toLowerCase()} queen on ${queen.square}.` })
+    if (queen) found.push({ kind: 'queen attack', description: `${pieceName} on ${move.to} attacks the ${opponent.toLowerCase()} queen on ${queen.square}.`,
+      arrows: [{ from: move.to, to: queen.square }], squares: [queen.square] })
   }
 
   const rays = attacker.type === 'b' ? diagonal : attacker.type === 'r' ? straight : attacker.type === 'q' ? [...diagonal, ...straight] : []
@@ -52,9 +56,11 @@ export function tacticsOf(move: Move): Tactic[] {
     const [front, back] = alongRay(board, move.to, direction)
     if (!front || !back || front.color !== enemy || back.color !== enemy) continue
     if (values[front.type] < values[back.type]) {
-      found.push({ kind: 'pin', description: `${pieceName} pins ${named(front)} to ${named(back)}${back.type === 'k' ? ', so it cannot move away' : ', so moving it exposes the piece behind it'}.` })
+      found.push({ kind: 'pin', description: `${pieceName} pins ${named(front)} to ${named(back)}${back.type === 'k' ? ', so it cannot move away' : ', so moving it exposes the piece behind it'}.`,
+        arrows: [{ from: move.to, to: back.square }], squares: [front.square, back.square] })
     } else if (values[front.type] > values[back.type] && values[back.type] >= 3) {
-      found.push({ kind: 'skewer', description: `${pieceName} lines up ${named(front)} and ${named(back)} behind it; moving the front piece exposes the one behind it.` })
+      found.push({ kind: 'skewer', description: `${pieceName} lines up ${named(front)} and ${named(back)} behind it; moving the front piece exposes the one behind it.`,
+        arrows: [{ from: move.to, to: back.square }], squares: [front.square, back.square] })
     }
   }
 
@@ -67,7 +73,8 @@ export function tacticsOf(move: Move): Tactic[] {
     })
     if (discovered) {
       const slider = board.get(discovered)!
-      found.push({ kind: 'discovered attack', description: `Moving the ${names[move.piece]} out of the way lets the ${names[slider.type]} on ${discovered} attack ${named(target)}.` })
+      found.push({ kind: 'discovered attack', description: `Moving the ${names[move.piece]} out of the way lets the ${names[slider.type]} on ${discovered} attack ${named(target)}.`,
+        arrows: [{ from: discovered, to: target.square }], squares: [discovered, target.square] })
     }
   }
 
@@ -77,7 +84,8 @@ export function tacticsOf(move: Move): Tactic[] {
     if (board.isAttacked(destination, move.color) || !board.isAttacked(destination, enemy)) continue
     const newlyExposed = destination === move.to || !before.isAttacked(destination, enemy) || before.isAttacked(destination, move.color)
     if (newlyExposed && board.moves({ verbose: true }).some(reply => reply.captured && reply.to === destination)) {
-      found.push({ kind: 'hanging piece', description: `${opponent} can capture the undefended ${names[piece.type]} on ${destination}.` })
+      found.push({ kind: 'hanging piece', description: `${opponent} can capture the undefended ${names[piece.type]} on ${destination}.`,
+        arrows: board.moves({ verbose: true }).filter(reply => reply.captured && reply.to === destination).map(reply => ({ from: reply.from, to: destination })), squares: [destination] })
     }
   }
   return found

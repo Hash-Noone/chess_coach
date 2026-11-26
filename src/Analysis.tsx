@@ -10,6 +10,7 @@ import { gameSites, readGame, type SavedGame } from './games'
 import { moveFacts, movePrompt, summaryPrompt, type ActiveCoach, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
 import { listenForReviewNavigation } from './review-navigation'
+import { useMoveExplanation } from './MoveExplanation'
 
 const depth = 12
 
@@ -113,16 +114,21 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
   const generatedSummary = useCoachReply(connection, summary && scores.length === moves.length + 1
     ? summaryPrompt(summary, summary.keyMoments.map(moment => moveFacts(moment.move, moment, scores[moment.index], scores[moment.index + 1], level)), level)
     : undefined)
+  const { story, animate, controls } = useMoveExplanation({ id: `${ply}:${!!bestView}:${variation.length}:${!!review}`, active,
+    move: bestView || variationMove ? undefined : current, review, before: scores[ply - 1], after: scores[ply], level })
+  const displayedFen = story?.fen ?? fen
+  const displayedEvaluation = story ? story.evaluation : evaluation
 
   return <div className="workspace">
     <div>
-      <div ref={boardRef}><Board id="review-board" fen={fen} orientation={orientation} bottomName={orientation === 'w' ? selected.white : selected.black} topName={orientation === 'w' ? selected.black : selected.white}
-        evaluation={evaluation} highlight={variationMove ?? (bestView ? undefined : current)} arrow={variationMove ? undefined : bestView || undefined}
-        onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} /></div>
+      <div ref={boardRef}><Board id="review-board" fen={displayedFen} orientation={orientation} bottomName={orientation === 'w' ? selected.white : selected.black} topName={orientation === 'w' ? selected.black : selected.white}
+        evaluation={displayedEvaluation} highlight={story ? story.highlight : variationMove ?? (bestView ? undefined : current)} arrow={story || variationMove ? undefined : bestView || undefined}
+        annotations={story} animate={animate} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
+        {controls}</div>
       <div className="board-navigation">
         <button className="icon-button" title="First position" aria-label="First position" disabled={ply === 0} onClick={() => go(0)}><SkipBack size={17} /></button>
         <button className="icon-button" title="Previous move" aria-label="Previous move" disabled={ply === 0} onClick={() => go(ply - 1)}><ChevronLeft size={20} /></button>
-        <span>{bestView ? 'Before ' + current.san : ply === 0 ? 'Starting position' : current.san} <small>{ply} / {moves.length}</small></span>
+        <span>{story ? 'Explaining ' + current.san : bestView ? 'Before ' + current.san : ply === 0 ? 'Starting position' : current.san} <small>{ply} / {moves.length}</small></span>
         <button className="icon-button" title="Next move" aria-label="Next move" disabled={ply === moves.length} onClick={() => go(ply + 1)}><ChevronRight size={20} /></button>
         <button className="icon-button" title="Final position" aria-label="Final position" disabled={ply === moves.length} onClick={() => go(moves.length)}><SkipForward size={17} /></button>
       </div>
@@ -130,8 +136,8 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
         <p><strong>Opening variation:</strong> {variation.map(move => move.san).join(' ')}</p>
         <button className="button secondary" onClick={() => { setVariation([]); revealBoard() }}>Return to game position</button>
       </div>}
-      <Opening fen={fen} onMove={uci => {
-        const move = boardMove(fen, uci)
+      <Opening fen={displayedFen} onMove={uci => {
+        const move = boardMove(displayedFen, uci)
         if (!move) return
         setVariation(steps => [...steps, move])
         revealBoard()
@@ -192,7 +198,7 @@ export function Analysis({ active, selected, onLibrary, settings, connection, bu
           </> : <p className="muted">{ply === 0 ? 'Select a move to see the coach’s explanation.' : 'Run analysis to get feedback on this move.'}</p>}
         </div>
       </section>
-      <AskCoach key={fen + level} connection={connection} fen={fen} evaluation={evaluation} move={variationMove ? undefined : facts} level={level} />
+      <AskCoach key={displayedFen + level} connection={connection} fen={displayedFen} evaluation={displayedEvaluation} move={variationMove || (story && story.fen !== current?.after) ? undefined : facts} level={level} />
     </aside>
   </div>
 }
