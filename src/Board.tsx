@@ -13,6 +13,7 @@ type Props = {
   topName: string
   showTurn?: boolean
   evaluation?: Evaluation
+  previousEvaluation?: boolean
   highlight?: Pick<Move, 'from' | 'to'>
   arrow?: string
   animate?: boolean
@@ -21,7 +22,7 @@ type Props = {
   onFlip: () => void
 }
 
-export function Board({ id, fen, orientation, bottomName, topName, showTurn, evaluation, highlight, arrow, animate = false, canPlay, onMove, onFlip }: Props) {
+export function Board({ id, fen, orientation, bottomName, topName, showTurn, evaluation, previousEvaluation, highlight, arrow, animate = false, canPlay, onMove, onFlip }: Props) {
   const [selected, setSelected] = useState<{ fen: string; square: Square }>()
   const [pending, setPending] = useState<{ fen: string; from: string; to: string }>()
   const board = new Chess(fen)
@@ -56,16 +57,19 @@ export function Board({ id, fen, orientation, bottomName, topName, showTurn, eva
   const whiteChance = evaluation ? Math.max(4, Math.min(96, winChance(evaluation.cp))) : 50
   const evalText = !evaluation ? '—' : evaluation.mate !== undefined ? (evaluation.mate === 0 ? 'Mate' : `M${Math.abs(evaluation.mate)}`)
     : `${evaluation.cp > 0 ? '+' : evaluation.cp < 0 ? '−' : ''}${(Math.abs(evaluation.cp) / 100).toFixed(1)}`
-  const bottom = orientation === 'w' ? whiteChance : 100 - whiteChance
+  const favorsBlack = (evaluation?.cp ?? 0) < 0
+  const isPrevious = evaluation && previousEvaluation
+  const evalLabel = !evaluation ? 'White evaluation unavailable'
+    : isPrevious ? `Last White evaluation (previous position): ${evalText}` : `White evaluation: ${evalText}`
 
   return <section className="board-area" aria-label="Chess position">
     <div className="player top-player"><Crown size={16} /><span>{topName}</span><span className={`color-dot ${orientation === 'w' ? 'black' : 'white'}`} />
       {showTurn && board.turn() !== orientation && <small>To move</small>}
     </div>
     <div className="board-row">
-      <div title={`White evaluation: ${evalText}`} className={`eval-bar ${orientation === 'w' ? 'white-bottom' : 'black-bottom'}`}>
-        <div className="eval-fill" style={{ height: `${bottom}%` }} />
-        <span className={`eval-value ${(evaluation?.cp ?? 0) < 0 ? 'favor-black' : 'favor-white'} ${((evaluation?.cp ?? 0) < 0) === (orientation === 'b') ? 'at-bottom' : ''}`}>{evalText}</span>
+      <div role="img" aria-label={evalLabel} title={evalLabel} className={`eval-bar ${orientation === 'w' ? 'white-bottom' : 'black-bottom'}`}>
+        <div className="eval-fill" style={{ transform: `scaleY(${whiteChance / 100})` }} />
+        <span className={`eval-value ${favorsBlack ? 'favor-black' : 'favor-white'} ${favorsBlack === (orientation === 'b') ? 'at-bottom' : ''}`}>{evalText}{isPrevious && '*'}</span>
       </div>
       <div className="board-frame">
         <Chessboard options={{

@@ -118,7 +118,7 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
   const canPlay = isHumanTurn && !finished
   const engineOpeningMoves = moves.length && moves[0].color !== human ? 1 : 0
   const levelNames = ['Relaxed', 'Casual', 'Club', 'Strong', 'Expert', 'Maximum']
-  const value = evaluated?.fen === game.fen() ? evaluated.value : undefined
+  const fen = game.fen()
 
   function review() {
     const copy = copyGame(game)
@@ -131,10 +131,10 @@ export function Play({ active, onReview }: { active: boolean; onReview: (game: S
 
   return <div className="workspace">
     <div className="play-board-stack">
-      <Board id="play-board" fen={game.fen()} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
-        showTurn={!finished} evaluation={value} highlight={lastMove}
+      <Board id="play-board" fen={fen} orientation={orientation} bottomName={orientation === human ? 'You' : engineName} topName={orientation === human ? engineName : 'You'} animate
+        showTurn={!finished} evaluation={evaluated?.value} previousEvaluation={evaluated && evaluated.fen !== fen} highlight={lastMove}
         canPlay={canPlay} onMove={play} onFlip={() => setOrientation(old => old === 'w' ? 'b' : 'w')} />
-      {active && <Opening fen={game.fen()} onMove={canPlay ? uci => {
+      {active && <Opening fen={fen} onMove={canPlay ? uci => {
         const { from, to, promotion } = coordinateMove(uci)
         play(from, to, promotion)
       } : undefined} />}
