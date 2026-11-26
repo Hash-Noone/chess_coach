@@ -142,6 +142,22 @@ it.each([
   })
 })
 
+it('cancels stalled Gemini error bodies and succeeds on the third attempt', async () => {
+  const cancel = vi.fn(() => new Promise(() => {}))
+  const stalled = () => new Response(new ReadableStream({ cancel }), { status: 503 })
+  const fetchUpstream = vi.fn()
+    .mockResolvedValueOnce(stalled())
+    .mockResolvedValueOnce(stalled())
+    .mockResolvedValueOnce(geminiReply('Take the center.'))
+  await withCoach({ apiKey: testKey, fetchUpstream, timeoutMs: 2000, errorBodyTimeoutMs: 20 }, async ({ send }) => {
+    const response = await send()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ answer: 'Take the center.' })
+    expect(fetchUpstream).toHaveBeenCalledTimes(3)
+    expect(cancel).toHaveBeenCalledTimes(2)
+  })
+})
+
 it('skips a Retry-After beyond the deadline without spending a quota slot', async () => {
   const fetchUpstream = vi.fn()
     .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': '60' } }))

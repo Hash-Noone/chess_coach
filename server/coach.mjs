@@ -36,6 +36,30 @@ function retryAfterMs(value) {
   return Math.max(0, Date.parse(header) - Date.now()) || 0
 }
 
+async function readGeminiError(body, signal) {
+  if (!body) return
+  const reader = body.getReader()
+  const cancel = () => void reader.cancel().catch(() => {})
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    signal.throwIfAborted()
+    let size = 0
+    const chunks = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      signal.throwIfAborted()
+      if (done) return JSON.parse(Buffer.concat(chunks).toString('utf8'))?.error
+      size += value.byteLength
+      if (size > maxBodyBytes) return
+      chunks.push(value)
+    }
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    cancel()
+    reader.releaseLock()
+  }
+}
+
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(value))
@@ -59,6 +83,7 @@ export function createCoachHandler({
   fetchUpstream = globalThis.fetch,
   timeoutMs = 30_000,
   attemptTimeoutMs = 15_000,
+  errorBodyTimeoutMs = 2000,
   publicOrigin = process.env.COACH_ORIGIN?.trim(),
   dailyLimit = Number(process.env.COACH_MAX_REQUESTS_PER_DAY),
 } = {}) {
@@ -157,12 +182,13 @@ export function createCoachHandler({
           ...fields,
         }))
       }
-      const errorFields = (error, attemptSignal = signal) => ({
+    const errorFields = (error, attemptSignal = signal, bodySignal = attemptSignal) => ({
         errorName: known(error?.name, errorNames),
         networkCode: known(error?.cause?.code ?? error?.code, networkCodes),
         abortReason: controller.signal.aborted ? 'client disconnected'
           : signal.aborted ? 'coach deadline exceeded'
           : attemptSignal.aborted ? 'Gemini attempt deadline exceeded'
+          : bodySignal.aborted ? 'Gemini error body deadline exceeded'
           : undefined,
       })
       for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
@@ -198,8 +224,9 @@ export function createCoachHandler({
           }
           let error
           let readError
+          const bodySignal = AbortSignal.any([attemptSignal, AbortSignal.timeout(errorBodyTimeoutMs)])
           try {
-            error = (await response.json())?.error
+            error = await readGeminiError(response.body, bodySignal)
           } catch (reason) {
             readError = reason
           }
@@ -209,7 +236,7 @@ export function createCoachHandler({
             geminiCode: Number.isInteger(error?.code) && error.code >= 100 && error.code < 600 ? error.code : undefined,
             geminiStatus: known(error?.status, geminiStatuses),
             geminiMessageCategory: geminiMessageCategory(error?.message),
-            ...(readError ? errorFields(readError, attemptSignal) : {}),
+            ...(readError ? errorFields(readError, attemptSignal, bodySignal) : {}),
           })
           signal.throwIfAborted()
           if (!retryStatuses.has(response.status)) break
