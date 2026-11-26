@@ -6,7 +6,7 @@ import { beginnerExplanation, boardMove, reviewImpact, reviewMove, summarize, ty
 import { AskCoach, GeneratedCoachText, useCoachReply } from './CoachReplies'
 import { CoachSettingsPanel } from './CoachSettings'
 import { Stockfish, type EnginePhase, type Evaluation } from './engine'
-import { readGame, type SavedGame } from './games'
+import { gameSites, readGame, type SavedGame } from './games'
 import { moveFacts, movePrompt, summaryPrompt, type CoachConnection, type CoachSettings } from './llm'
 import { Opening } from './Opening'
 import { listenForReviewNavigation } from './review-navigation'
@@ -141,7 +141,8 @@ export function Analysis({ active, selected, onLibrary, settings, connection, on
         <h2>Your chess coach</h2>
         <p className="muted">Learn what changed with each move, and what to look for next time.</p>
         <div className="analysis-meta"><span className="badge subtle" title="Depth is how many individual player turns the engine aims to look ahead.">Stockfish · looks {depth} turns ahead</span>
-          {selected.url ? <a className="link-button" href={selected.url} target="_blank" rel="noreferrer">Open on Lichess <ExternalLink size={13} /></a>
+          {selected.url && (selected.source === 'lichess' || selected.source === 'chesscom')
+            ? <a className="link-button" href={selected.url} target="_blank" rel="noreferrer">Open on {gameSites[selected.source]} <ExternalLink size={13} /></a>
             : <button className="link-button" onClick={onLibrary}>Choose another game</button>}
         </div>
         <div className="field-label">Coaching level</div>
