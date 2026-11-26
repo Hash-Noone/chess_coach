@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, Crown, Database, Sparkles, Swords } from 'lucide-react'
+import { ChevronRight, Crown, Database, Github, Sparkles, Swords } from 'lucide-react'
 import { Analysis, initialReview, type ReviewState } from './Analysis'
 import type { CoachLevel } from './coach'
 import { library, loadSavedGames, storeGames, type SavedGame } from './games'
@@ -89,7 +89,7 @@ export function App() {
           setCoachSettings(settings)
           setConnection(next)
         }} onDisconnect={() => setConnection(undefined)} /></div>}
-      <footer><span>ChessCoach <span className="footer-divider">·</span> Stockfish analysis and Lichess game data</span></footer>
+      <footer><span>ChessCoach <span className="footer-divider">·</span> Stockfish analysis and Lichess game data</span><a href="https://github.com/Hash-Noone/chess_coach" target="_blank" rel="noopener"><Github size={15} /> Source</a></footer>
     </main>
   </>
 }
