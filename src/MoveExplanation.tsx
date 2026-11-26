@@ -48,7 +48,7 @@ export function useMoveExplanation({ id, move, review, before, after, level, act
     setPlaying(!playing)
   }
 
-  const controls = move && <section className={`move-explanation ${current?.tone ?? ''}`} aria-label="Animated move explanation">
+  const controls = move && <section className={`move-explanation story-${current?.tone ?? 'idle'}`} aria-label="Animated move explanation">
       <div className="story-heading">
         <span className="eyebrow">MOVE EXPLAINED <span>{move.san}</span></span>
         {current && <button className="icon-button" aria-label="Close explanation" title="Return to game position" onClick={() => { setIndex(undefined); setPlaying(false) }}><X size={16} /></button>}
